@@ -1,6 +1,52 @@
-from vis_nav_game import Player, Action
+from enum import IntEnum
+from vis_nav_game import Player, Action, Phase
 import pygame
+import numpy as np
 import cv2
+from time import sleep, strftime
+import os
+
+class OccupancyMap(IntEnum):
+    UNEXPLORED = 0
+    VISITED = 1
+    OBSTACLE = 2
+
+def convert_opencv_img_to_pygame(opencv_image):
+    """
+    Convert OpenCV images for Pygame.
+
+    see https://blanktar.jp/blog/2016/01/pygame-draw-opencv-image.html
+    """
+    opencv_image = opencv_image[:, :, ::-1]  # BGR->RGB
+    shape = opencv_image.shape[1::-1]  # (height,width,Number of colors) -> (width, height)
+    pygame_image = pygame.image.frombuffer(opencv_image.tobytes(), shape, 'RGB')
+
+    return pygame_image
+
+def convert_exploration_graph_to_pygame(exploration_graph):
+    """
+    Convert OpenCV images for Pygame.
+
+    see https://blanktar.jp/blog/2016/01/pygame-draw-opencv-image.html
+    """
+    # opencv_image = opencv_image[:, :, ::-1]  # BGR->RGB
+
+    color_mapping = {
+        OccupancyMap.UNEXPLORED: (0, 0, 0),
+        OccupancyMap.VISITED: (255, 0, 0),
+        OccupancyMap.OBSTACLE: (0, 255, 255)
+    }
+    
+    shape = exploration_graph.shape
+    height, width = shape
+    image = np.zeros((height, width, 3), dtype=np.uint8)
+    for i in range(height):
+        for j in range(width):
+            image[i, j] = color_mapping[exploration_graph[i, j]]
+
+    pygame_image = pygame.image.frombuffer(image, shape, 'RGB')
+
+    return pygame_image
 
 class KeyboardPlayerPyGame(Player):
     """
@@ -13,6 +59,14 @@ class KeyboardPlayerPyGame(Player):
         self.last_act = Action.IDLE
         self.screen = None
         self.keymap = None
+        self.filepath = ''
+
+        self.x = 0
+        self.y = 0
+        self.heading = 0
+
+        self.exploration_graph = np.zeros(shape=(200,200), dtype=np.uint8)
+
         super(KeyboardPlayerPyGame, self).__init__()
 
     def reset(self):
@@ -31,6 +85,21 @@ class KeyboardPlayerPyGame(Player):
             pygame.K_ESCAPE: Action.QUIT
         }
 
+        self.filepath = './data/exploration_views/' + strftime("%Y%m%d-%H%M%S")
+        os.makedirs(self.filepath, exist_ok=True)
+
+    def pre_exploration(self):
+        self.x = 0
+        self.y = 0
+        self.heading = 0
+        self.last_act = Action.IDLE
+
+    def pre_navigation(self):
+        self.x = 0
+        self.y = 0
+        self.heading = 0
+        self.last_act = Action.IDLE
+
     def act(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -40,12 +109,23 @@ class KeyboardPlayerPyGame(Player):
 
             if event.type == pygame.KEYDOWN:
                 if event.key in self.keymap:
-                    self.last_act |= self.keymap[event.key]
-                else:
-                    self.show_target_images()
+                    self.last_act = self.keymap[event.key]
             if event.type == pygame.KEYUP:
                 if event.key in self.keymap:
-                    self.last_act ^= self.keymap[event.key]
+                    self.last_act = Action.IDLE
+        
+        if self.last_act == Action.FORWARD:
+            self.x += 1
+        elif self.last_act == Action.BACKWARD:
+            self.x -= 1
+        elif self.last_act == Action.LEFT:
+            self.heading = (self.heading - 1) % 147
+        elif self.last_act == Action.RIGHT:
+            self.heading = (self.heading + 1) % 147
+
+        self.exploration_graph[100 - round(self.x)][100 - round(self.y)] = OccupancyMap.VISITED
+
+        # sleep(0.01)
         return self.last_act
 
     def show_target_images(self):
@@ -81,34 +161,46 @@ class KeyboardPlayerPyGame(Player):
     def set_target_images(self, images):
         super(KeyboardPlayerPyGame, self).set_target_images(images)
         self.show_target_images()
-
+    
     def see(self, fpv):
         if fpv is None or len(fpv.shape) < 3:
             return
 
         self.fpv = fpv
 
+        h, w, _ = fpv.shape
         if self.screen is None:
-            h, w, _ = fpv.shape
-            self.screen = pygame.display.set_mode((w, h))
+            self.screen = pygame.display.set_mode((2*w, h))
 
-        def convert_opencv_img_to_pygame(opencv_image):
-            """
-            Convert OpenCV images for Pygame.
+        step = 0
+        phase = None
+        state = self.get_state()
+        if state is not None:
+          step = state[2]
+          phase = state[1]
 
-            see https://blanktar.jp/blog/2016/01/pygame-draw-opencv-image.html
-            """
-            opencv_image = opencv_image[:, :, ::-1]  # BGR->RGB
-            shape = opencv_image.shape[1::-1]  # (height,width,Number of colors) -> (width, height)
-            pygame_image = pygame.image.frombuffer(opencv_image.tobytes(), shape, 'RGB')
+        if phase == Phase.EXPLORATION and step % 5 == 1:
+            cv2.imwrite(os.path.join(self.filepath, f"{step}_{self.x}_{self.y}_{self.heading}.png"), fpv)
 
-            return pygame_image
+        blank_img = np.zeros(shape=(h,w,3), dtype=np.uint8)
+        w_offset = 25
+        h_offset = 10
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        line = cv2.LINE_AA
+        size = 0.75
+        stroke = 1
+        color = (255, 255, 255)
 
-        pygame.display.set_caption("KeyboardPlayer:fpv")
+        cv2.putText(blank_img, f"x={self.x}, y=0, heading={self.heading}", (h_offset, w_offset), font, size, color, stroke, line)
+
+        pygame.display.set_caption(f"{self.__class__.__name__}:fpv; h: {h} w:{w}; step{step}")
         rgb = convert_opencv_img_to_pygame(fpv)
+        minimap = convert_opencv_img_to_pygame(blank_img)
+        minimap2 = convert_exploration_graph_to_pygame(self.exploration_graph)
         self.screen.blit(rgb, (0, 0))
+        self.screen.blit(minimap, (w, 0))
+        self.screen.blit(minimap2, (w+50, 50))
         pygame.display.update()
-
 
 if __name__ == "__main__":
     import vis_nav_game

@@ -17,7 +17,6 @@ class ActionQueuePlayer(Player):
     def reset(self):
         self.fpv = None
         self.screen = None
-        self.actions = [Action.IDLE] * 100 + [Action.LEFT] * 147 + [Action.IDLE] * 100 + [Action.LEFT] * 147 + [Action.QUIT]
 
         pygame.init()
 
@@ -89,7 +88,7 @@ class ActionQueuePlayer(Player):
 
             return pygame_image
 
-        pygame.display.set_caption("KeyboardPlayer:fpv")
+        pygame.display.set_caption(f"{self.__class__.__name__}:fpv")
         rgb = convert_opencv_img_to_pygame(fpv)
         self.screen.blit(rgb, (0, 0))
         pygame.display.update()
