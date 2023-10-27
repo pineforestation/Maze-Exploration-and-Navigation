@@ -157,18 +157,20 @@ class KeyboardPlayerPyGame(Player):
 
         h, w, _ = fpv.shape
         if self.screen is None:
-            self.screen = pygame.display.set_mode((2*w, h))
+            self.screen = pygame.display.set_mode((4*w, 2*h))
 
+        # Save camera observations (exploration phase only)
+        # These can be used for SfM, SLAM, and visual place recognition
         step = 0
         phase = None
         state = self.get_state()
         if state is not None:
           step = state[2]
           phase = state[1]
-
         if phase == Phase.EXPLORATION and step % 5 == 1:
             cv2.imwrite(os.path.join(self.filepath, f"{step}_{self.x}_{self.y}_{self.heading}.png"), fpv)
 
+        # Draw the heads up display (HUD) and the mini-map
         hud_img = np.zeros(shape=(h,w,3), dtype=np.uint8)
         w_offset = 10
         h_offset = 20
@@ -177,17 +179,17 @@ class KeyboardPlayerPyGame(Player):
         size = 0.75
         stroke = 1
         color = (255, 255, 255)
-
         cv2.putText(hud_img, f"x={self.x:.2f}, y={self.y:.2f}", (w_offset, h_offset), font, size, color, stroke, line)
         cv2.putText(hud_img, f"heading={self.heading}", (w_offset, h_offset * 2), font, size, color, stroke, line)
 
         pygame.display.set_caption(f"{self.__class__.__name__}:fpv; h: {h} w:{w}; step{step}")
-        rgb = convert_opencv_img_to_pygame(fpv)
+        fpv_doubled = cv2.resize(fpv, (2*w, 2*h))
+        rgb = convert_opencv_img_to_pygame(fpv_doubled)
         hud = convert_opencv_img_to_pygame(hud_img)
         minimap = convert_exploration_graph_to_pygame(self.exploration_graph)
         self.screen.blit(rgb, (0, 0))
-        self.screen.blit(hud, (w, 0))
-        self.screen.blit(minimap, (w+50, 50))
+        self.screen.blit(hud, (2*w, 0))
+        self.screen.blit(minimap, (2*w+50, 50))
         pygame.display.update()
 
 if __name__ == "__main__":
