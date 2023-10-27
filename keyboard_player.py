@@ -38,6 +38,7 @@ class KeyboardPlayerPyGame(Player):
         self.keymap = None
         self.other_keymap = None
         self.filepath = ''
+        self.action_queue = []
 
         self.x = 0
         self.y = 0
@@ -85,41 +86,56 @@ class KeyboardPlayerPyGame(Player):
         self.y = 0
         self.heading = 0
         self.last_act = Action.IDLE
+        self.action_queue = []
 
     def pre_navigation(self):
         self.x = 0
         self.y = 0
         self.heading = 0
         self.last_act = Action.IDLE
+        self.action_queue = []
 
     def act(self):
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                self.last_act = Action.QUIT
-                return Action.QUIT
+        if not self.action_queue:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    self.last_act = Action.QUIT
+                    return Action.QUIT
 
-            if event.type == pygame.KEYDOWN:
-                if event.key in self.keymap:
-                    self.last_act = self.keymap[event.key]
-                elif event.key in self.other_keymap:
-                    if self.other_keymap[event.key] == "North wall":
-                        for i in range(300):
-                            self.exploration_graph[150 - round(self.y) - 1][i] = [0, 255, 0]
-                    elif self.other_keymap[event.key] == "South wall":
-                        for i in range(300):
-                            self.exploration_graph[150 - round(self.y) + 1][i] = [0, 255, 0]
-                    elif self.other_keymap[event.key] == "West wall":
-                        for i in range(300):
-                            self.exploration_graph[i][150 + round(self.x) - 1] = [0, 255, 0]
-                    elif self.other_keymap[event.key] == "East wall":
-                        for i in range(300):
-                            self.exploration_graph[i][150 + round(self.x) + 1] = [0, 255, 0]
-                    elif self.other_keymap[event.key] == "Reset true north":
-                        self.heading = 0
-            if event.type == pygame.KEYUP:
-                if event.key in self.keymap:
-                    self.last_act = Action.IDLE
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RIGHT:
+                        if self.heading == 0:
+                            self.action_queue = [Action.IDLE] + [Action.RIGHT] * 36
+                        else:
+                            self.action_queue = [Action.IDLE] + [Action.RIGHT] * 37
+                    elif event.key == pygame.K_LEFT:
+                        if self.heading == 36:
+                            self.action_queue = [Action.IDLE] + [Action.LEFT] * 36
+                        else:
+                            self.action_queue = [Action.IDLE] + [Action.LEFT] * 37
+                    elif event.key in self.keymap:
+                        self.last_act = self.keymap[event.key]
+                    elif event.key in self.other_keymap:
+                        if self.other_keymap[event.key] == "North wall":
+                            for i in range(300):
+                                self.exploration_graph[150 - round(self.y) - 1][i] = [0, 255, 0]
+                        elif self.other_keymap[event.key] == "South wall":
+                            for i in range(300):
+                                self.exploration_graph[150 - round(self.y) + 1][i] = [0, 255, 0]
+                        elif self.other_keymap[event.key] == "West wall":
+                            for i in range(300):
+                                self.exploration_graph[i][150 + round(self.x) - 1] = [0, 255, 0]
+                        elif self.other_keymap[event.key] == "East wall":
+                            for i in range(300):
+                                self.exploration_graph[i][150 + round(self.x) + 1] = [0, 255, 0]
+                        elif self.other_keymap[event.key] == "Reset true north":
+                            self.heading = 0
+                if event.type == pygame.KEYUP:
+                    if event.key in self.keymap:
+                        self.last_act = Action.IDLE
+        else:
+            self.last_act = self.action_queue.pop()
         
         if self.last_act == Action.FORWARD:
             converted_heading = self.heading / 147 * 2 * math.pi
