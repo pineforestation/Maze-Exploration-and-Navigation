@@ -36,6 +36,7 @@ class KeyboardPlayerPyGame(Player):
         self.last_act = Action.IDLE
         self.screen = None
         self.keymap = None
+        self.other_keymap = None
         self.filepath = ''
 
         self.x = 0
@@ -65,7 +66,15 @@ class KeyboardPlayerPyGame(Player):
             pygame.K_UP: Action.FORWARD,
             pygame.K_DOWN: Action.BACKWARD,
             pygame.K_SPACE: Action.CHECKIN,
-            pygame.K_ESCAPE: Action.QUIT
+            pygame.K_ESCAPE: Action.QUIT,
+        }
+
+        self.other_keymap = {
+            pygame.K_w: "North wall",
+            pygame.K_a: "West wall",
+            pygame.K_s: "South wall",
+            pygame.K_d: "East wall",
+            pygame.K_n: "Reset true north",
         }
 
         self.filepath = './data/exploration_views/' + strftime("%Y%m%d-%H%M%S")
@@ -93,6 +102,21 @@ class KeyboardPlayerPyGame(Player):
             if event.type == pygame.KEYDOWN:
                 if event.key in self.keymap:
                     self.last_act = self.keymap[event.key]
+                elif event.key in self.other_keymap:
+                    if self.other_keymap[event.key] == "North wall":
+                        for i in range(300):
+                            self.exploration_graph[150 - round(self.y) - 1][i] = [0, 255, 0]
+                    elif self.other_keymap[event.key] == "South wall":
+                        for i in range(300):
+                            self.exploration_graph[150 - round(self.y) + 1][i] = [0, 255, 0]
+                    elif self.other_keymap[event.key] == "West wall":
+                        for i in range(300):
+                            self.exploration_graph[i][150 + round(self.x) - 1] = [0, 255, 0]
+                    elif self.other_keymap[event.key] == "East wall":
+                        for i in range(300):
+                            self.exploration_graph[i][150 + round(self.x) + 1] = [0, 255, 0]
+                    elif self.other_keymap[event.key] == "Reset true north":
+                        self.heading = 0
             if event.type == pygame.KEYUP:
                 if event.key in self.keymap:
                     self.last_act = Action.IDLE
@@ -182,6 +206,7 @@ class KeyboardPlayerPyGame(Player):
         cv2.putText(hud_img, f"x={self.x:.2f}, y={self.y:.2f}", (w_offset, h_offset), font, size, color, stroke, line)
         cv2.putText(hud_img, f"heading={self.heading}", (w_offset, h_offset * 2), font, size, color, stroke, line)
         
+        # Draw the position marker
         minimap = np.copy(self.exploration_graph)
         marker_size = 10
         marker_img = np.zeros(shape=(marker_size, marker_size, 3), dtype=np.uint8)
@@ -192,6 +217,7 @@ class KeyboardPlayerPyGame(Player):
         y = 150 - round(self.y) - marker_size // 2
         minimap[y:y+rotated_marker.shape[0], x:x+rotated_marker.shape[1]] = rotated_marker
 
+        # Display everything
         pygame.display.set_caption(f"{self.__class__.__name__}:fpv; h: {h} w:{w}; step{step}")
         fpv_doubled = cv2.resize(fpv, (2*w, 2*h))
         fpv_pygame = convert_opencv_img_to_pygame(fpv_doubled)
