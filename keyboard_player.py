@@ -112,7 +112,7 @@ class KeyboardPlayerPyGame(Player):
 
         self.exploration_graph[150 - round(self.y)][150 + round(self.x)] = [255, 0, 0]
 
-        # sleep(0.01)
+        sleep(0.01)
         return self.last_act
 
     def show_target_images(self):
@@ -181,15 +181,25 @@ class KeyboardPlayerPyGame(Player):
         color = (255, 255, 255)
         cv2.putText(hud_img, f"x={self.x:.2f}, y={self.y:.2f}", (w_offset, h_offset), font, size, color, stroke, line)
         cv2.putText(hud_img, f"heading={self.heading}", (w_offset, h_offset * 2), font, size, color, stroke, line)
+        
+        minimap = np.copy(self.exploration_graph)
+        marker_size = 10
+        marker_img = np.zeros(shape=(marker_size, marker_size, 3), dtype=np.uint8)
+        cv2.drawMarker(marker_img, (marker_size // 2, marker_size // 2), [0, 255, 0], cv2.MARKER_TRIANGLE_UP, marker_size)
+        rotation_matrix = cv2.getRotationMatrix2D((marker_img.shape[1] // 2, marker_img.shape[0] // 2), (self.heading / 147 * -360), 1)
+        rotated_marker = cv2.warpAffine(marker_img, rotation_matrix, (marker_img.shape[1], marker_img.shape[0]))
+        x = 150 + round(self.x) - marker_size // 2
+        y = 150 - round(self.y) - marker_size // 2
+        minimap[y:y+rotated_marker.shape[0], x:x+rotated_marker.shape[1]] = rotated_marker
 
         pygame.display.set_caption(f"{self.__class__.__name__}:fpv; h: {h} w:{w}; step{step}")
         fpv_doubled = cv2.resize(fpv, (2*w, 2*h))
-        rgb = convert_opencv_img_to_pygame(fpv_doubled)
-        hud = convert_opencv_img_to_pygame(hud_img)
-        minimap = convert_exploration_graph_to_pygame(self.exploration_graph)
-        self.screen.blit(rgb, (0, 0))
-        self.screen.blit(hud, (2*w, 0))
-        self.screen.blit(minimap, (2*w+50, 50))
+        fpv_pygame = convert_opencv_img_to_pygame(fpv_doubled)
+        hud_pygame = convert_opencv_img_to_pygame(hud_img)
+        minimap_pygame = convert_exploration_graph_to_pygame(minimap)
+        self.screen.blit(fpv_pygame, (0, 0))
+        self.screen.blit(hud_pygame, (2*w, 0))
+        self.screen.blit(minimap_pygame, (2*w+50, 50))
         pygame.display.update()
 
 if __name__ == "__main__":
