@@ -1,15 +1,11 @@
-from enum import IntEnum
 from vis_nav_game import Player, Action, Phase
 import pygame
 import numpy as np
 import cv2
+import math
 from time import sleep, strftime
 import os
 
-class OccupancyMap(IntEnum):
-    UNEXPLORED = 0
-    VISITED = 1
-    OBSTACLE = 2
 
 def convert_opencv_img_to_pygame(opencv_image):
     """
@@ -23,28 +19,9 @@ def convert_opencv_img_to_pygame(opencv_image):
 
     return pygame_image
 
-def convert_exploration_graph_to_pygame(exploration_graph):
-    """
-    Convert OpenCV images for Pygame.
-
-    see https://blanktar.jp/blog/2016/01/pygame-draw-opencv-image.html
-    """
-    # opencv_image = opencv_image[:, :, ::-1]  # BGR->RGB
-
-    color_mapping = {
-        OccupancyMap.UNEXPLORED: (0, 0, 0),
-        OccupancyMap.VISITED: (255, 0, 0),
-        OccupancyMap.OBSTACLE: (0, 255, 255)
-    }
-    
-    shape = exploration_graph.shape
-    height, width = shape
-    image = np.zeros((height, width, 3), dtype=np.uint8)
-    for i in range(height):
-        for j in range(width):
-            image[i, j] = color_mapping[exploration_graph[i, j]]
-
-    pygame_image = pygame.image.frombuffer(image, shape, 'RGB')
+def convert_exploration_graph_to_pygame(exploration_graph):    
+    shape = exploration_graph.shape[1::-1]
+    pygame_image = pygame.image.frombuffer(exploration_graph, shape, 'RGB')
 
     return pygame_image
 
@@ -65,7 +42,13 @@ class KeyboardPlayerPyGame(Player):
         self.y = 0
         self.heading = 0
 
-        self.exploration_graph = np.zeros(shape=(200,200), dtype=np.uint8)
+        self.exploration_graph = np.zeros(shape=(300, 300, 3), dtype=np.uint8)
+
+        for i in range(300):
+            self.exploration_graph[0][i] = [0, 0, 255]
+            self.exploration_graph[299][i] = [0, 0, 255]
+            self.exploration_graph[i][0] = [0, 0, 255]
+            self.exploration_graph[i][299] = [0, 0, 255]
 
         super(KeyboardPlayerPyGame, self).__init__()
 
@@ -115,15 +98,19 @@ class KeyboardPlayerPyGame(Player):
                     self.last_act = Action.IDLE
         
         if self.last_act == Action.FORWARD:
-            self.x += 1
+            converted_heading = self.heading / 147 * 2 * math.pi
+            self.x += math.sin(converted_heading)
+            self.y += math.cos(converted_heading)
         elif self.last_act == Action.BACKWARD:
-            self.x -= 1
+            converted_heading = self.heading / 147 * 2 * math.pi
+            self.x -= math.sin(converted_heading)
+            self.y -= math.cos(converted_heading)
         elif self.last_act == Action.LEFT:
             self.heading = (self.heading - 1) % 147
         elif self.last_act == Action.RIGHT:
             self.heading = (self.heading + 1) % 147
 
-        self.exploration_graph[100 - round(self.x)][100 - round(self.y)] = OccupancyMap.VISITED
+        self.exploration_graph[150 - round(self.y)][150 + round(self.x)] = [255, 0, 0]
 
         # sleep(0.01)
         return self.last_act
@@ -182,24 +169,25 @@ class KeyboardPlayerPyGame(Player):
         if phase == Phase.EXPLORATION and step % 5 == 1:
             cv2.imwrite(os.path.join(self.filepath, f"{step}_{self.x}_{self.y}_{self.heading}.png"), fpv)
 
-        blank_img = np.zeros(shape=(h,w,3), dtype=np.uint8)
-        w_offset = 25
-        h_offset = 10
+        hud_img = np.zeros(shape=(h,w,3), dtype=np.uint8)
+        w_offset = 10
+        h_offset = 20
         font = cv2.FONT_HERSHEY_SIMPLEX
         line = cv2.LINE_AA
         size = 0.75
         stroke = 1
         color = (255, 255, 255)
 
-        cv2.putText(blank_img, f"x={self.x}, y=0, heading={self.heading}", (h_offset, w_offset), font, size, color, stroke, line)
+        cv2.putText(hud_img, f"x={self.x:.2f}, y={self.y:.2f}", (w_offset, h_offset), font, size, color, stroke, line)
+        cv2.putText(hud_img, f"heading={self.heading}", (w_offset, h_offset * 2), font, size, color, stroke, line)
 
         pygame.display.set_caption(f"{self.__class__.__name__}:fpv; h: {h} w:{w}; step{step}")
         rgb = convert_opencv_img_to_pygame(fpv)
-        minimap = convert_opencv_img_to_pygame(blank_img)
-        minimap2 = convert_exploration_graph_to_pygame(self.exploration_graph)
+        hud = convert_opencv_img_to_pygame(hud_img)
+        minimap = convert_exploration_graph_to_pygame(self.exploration_graph)
         self.screen.blit(rgb, (0, 0))
-        self.screen.blit(minimap, (w, 0))
-        self.screen.blit(minimap2, (w+50, 50))
+        self.screen.blit(hud, (w, 0))
+        self.screen.blit(minimap, (w+50, 50))
         pygame.display.update()
 
 if __name__ == "__main__":
