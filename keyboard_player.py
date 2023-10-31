@@ -1,4 +1,5 @@
 from vis_nav_game import Player, Action, Phase
+from enum import Enum
 import pygame
 import numpy as np
 import cv2
@@ -7,33 +8,36 @@ from time import sleep, strftime
 import os
 
 
-def convert_opencv_img_to_pygame(opencv_image):
+def convert_opencv_img_to_pygame(opencv_image, bgr_to_rb = False):
     """
     Convert OpenCV images for Pygame.
 
     see https://blanktar.jp/blog/2016/01/pygame-draw-opencv-image.html
     """
-    opencv_image = opencv_image[:, :, ::-1]  # BGR->RGB
+    if bgr_to_rb:
+        opencv_image = opencv_image[:, :, ::-1]  # BGR->RGB
     shape = opencv_image.shape[1::-1]  # (height,width,Number of colors) -> (width, height)
     pygame_image = pygame.image.frombuffer(opencv_image.tobytes(), shape, 'RGB')
 
     return pygame_image
 
-def convert_exploration_graph_to_pygame(exploration_graph):    
-    shape = exploration_graph.shape[1::-1]
-    pygame_image = pygame.image.frombuffer(exploration_graph, shape, 'RGB')
+class CustomAction(Enum):
+    QUARTER_TURN_LEFT = 33
+    QUARTER_TURN_RIGHT = 34
+    MARK_NORTH_WALL = 35
+    MARK_WEST_WALL = 36
+    MARK_SOUTH_WALL = 37
+    MARK_EAST_WALL = 38
+    RESET_TRUE_NORTH = 39
 
-    return pygame_image
 
 class KeyboardPlayerPyGame(Player):
     """
-    This is a copy of the example player provided by the professor.
     Control manually using the keyboard.
     """
 
     def __init__(self):
         self.fpv = None
-        self.last_act = Action.IDLE
         self.screen = None
         self.keymap = None
         self.other_keymap = None
@@ -45,7 +49,6 @@ class KeyboardPlayerPyGame(Player):
         self.heading = 0
 
         self.exploration_graph = np.zeros(shape=(300, 300, 3), dtype=np.uint8)
-
         for i in range(300):
             self.exploration_graph[0][i] = [0, 0, 255]
             self.exploration_graph[299][i] = [0, 0, 255]
@@ -56,26 +59,20 @@ class KeyboardPlayerPyGame(Player):
 
     def reset(self):
         self.fpv = None
-        self.last_act = Action.IDLE
         self.screen = None
 
         pygame.init()
 
         self.keymap = {
-            pygame.K_LEFT: Action.LEFT,
-            pygame.K_RIGHT: Action.RIGHT,
-            pygame.K_UP: Action.FORWARD,
-            pygame.K_DOWN: Action.BACKWARD,
+            pygame.K_LEFT: CustomAction.QUARTER_TURN_LEFT,
+            pygame.K_RIGHT: CustomAction.QUARTER_TURN_RIGHT,
             pygame.K_SPACE: Action.CHECKIN,
             pygame.K_ESCAPE: Action.QUIT,
-        }
-
-        self.other_keymap = {
-            pygame.K_w: "North wall",
-            pygame.K_a: "West wall",
-            pygame.K_s: "South wall",
-            pygame.K_d: "East wall",
-            pygame.K_n: "Reset true north",
+            pygame.K_w: CustomAction.MARK_NORTH_WALL,
+            pygame.K_a: CustomAction.MARK_WEST_WALL,
+            pygame.K_s: CustomAction.MARK_SOUTH_WALL,
+            pygame.K_d: CustomAction.MARK_EAST_WALL,
+            pygame.K_n: CustomAction.RESET_TRUE_NORTH,
         }
 
         self.filepath = './data/exploration_views/' + strftime("%Y%m%d-%H%M%S")
@@ -85,76 +82,83 @@ class KeyboardPlayerPyGame(Player):
         self.x = 0
         self.y = 0
         self.heading = 0
-        self.last_act = Action.IDLE
         self.action_queue = []
 
     def pre_navigation(self):
         self.x = 0
         self.y = 0
         self.heading = 0
-        self.last_act = Action.IDLE
         self.action_queue = []
 
     def act(self):
-        if not self.action_queue:
+        next_action = Action.IDLE
+
+        if self.action_queue:
+            next_action = self.action_queue.pop()
+        else:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
-                    self.last_act = Action.QUIT
                     return Action.QUIT
+                elif event.type == pygame.KEYDOWN and event.key in self.keymap:
+                    action = self.keymap[event.key]
+                    if isinstance(action, CustomAction):
+                        self.perform_custom_action(action)
+                    elif isinstance(action, Action):
+                        next_action = action
 
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_RIGHT:
-                        if self.heading == 0:
-                            self.action_queue = [Action.IDLE] + [Action.RIGHT] * 36
-                        else:
-                            self.action_queue = [Action.IDLE] + [Action.RIGHT] * 37
-                    elif event.key == pygame.K_LEFT:
-                        if self.heading == 36:
-                            self.action_queue = [Action.IDLE] + [Action.LEFT] * 36
-                        else:
-                            self.action_queue = [Action.IDLE] + [Action.LEFT] * 37
-                    elif event.key in self.keymap:
-                        self.last_act = self.keymap[event.key]
-                    elif event.key in self.other_keymap:
-                        if self.other_keymap[event.key] == "North wall":
-                            for i in range(300):
-                                self.exploration_graph[150 - round(self.y) - 1][i] = [0, 255, 0]
-                        elif self.other_keymap[event.key] == "South wall":
-                            for i in range(300):
-                                self.exploration_graph[150 - round(self.y) + 1][i] = [0, 255, 0]
-                        elif self.other_keymap[event.key] == "West wall":
-                            for i in range(300):
-                                self.exploration_graph[i][150 + round(self.x) - 1] = [0, 255, 0]
-                        elif self.other_keymap[event.key] == "East wall":
-                            for i in range(300):
-                                self.exploration_graph[i][150 + round(self.x) + 1] = [0, 255, 0]
-                        elif self.other_keymap[event.key] == "Reset true north":
-                            self.heading = 0
-                if event.type == pygame.KEYUP:
-                    if event.key in self.keymap:
-                        self.last_act = Action.IDLE
-        else:
-            self.last_act = self.action_queue.pop()
-        
-        if self.last_act == Action.FORWARD:
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_UP]:
+                next_action = Action.FORWARD
+            elif keys[pygame.K_DOWN]:
+                next_action = Action.BACKWARD
+
+        if next_action == Action.FORWARD:
             converted_heading = self.heading / 147 * 2 * math.pi
             self.x += math.sin(converted_heading)
             self.y += math.cos(converted_heading)
-        elif self.last_act == Action.BACKWARD:
+        elif next_action == Action.BACKWARD:
             converted_heading = self.heading / 147 * 2 * math.pi
             self.x -= math.sin(converted_heading)
             self.y -= math.cos(converted_heading)
-        elif self.last_act == Action.LEFT:
+        elif next_action == Action.LEFT:
             self.heading = (self.heading - 1) % 147
-        elif self.last_act == Action.RIGHT:
+        elif next_action == Action.RIGHT:
             self.heading = (self.heading + 1) % 147
 
         self.exploration_graph[150 - round(self.y)][150 + round(self.x)] = [255, 0, 0]
 
         sleep(0.01)
-        return self.last_act
+        return next_action
 
+    def perform_custom_action(self, action):
+        if action == CustomAction.QUARTER_TURN_LEFT:
+            if self.heading == 36:
+                self.action_queue = [Action.IDLE] + [Action.LEFT] * 36
+            else:
+                self.action_queue = [Action.IDLE] + [Action.LEFT] * 37
+        elif action == CustomAction.QUARTER_TURN_RIGHT:
+            if self.heading == 0:
+                self.action_queue = [Action.IDLE] + [Action.RIGHT] * 36
+            else:
+                self.action_queue = [Action.IDLE] + [Action.RIGHT] * 37
+        elif action == CustomAction.MARK_NORTH_WALL:
+            for i in range(300):
+                self.exploration_graph[150 - round(self.y) - 1][i] = [0, 255, 0]
+        elif action == CustomAction.MARK_SOUTH_WALL:
+            for i in range(300):
+                self.exploration_graph[150 - round(self.y) + 1][i] = [0, 255, 0]
+        elif action == CustomAction.MARK_WEST_WALL:
+            for i in range(300):
+                self.exploration_graph[i][150 + round(self.x) - 1] = [0, 255, 0]
+        elif action == CustomAction.MARK_EAST_WALL:
+            for i in range(300):
+                self.exploration_graph[i][150 + round(self.x) + 1] = [0, 255, 0]
+        elif action == CustomAction.RESET_TRUE_NORTH:
+            self.heading = 0
+        else:
+            raise NotImplementedError(f"Unknown custom action: {action}")
+        
     def show_target_images(self):
         targets = self.get_target_images()
         if targets is None or len(targets) <= 0:
@@ -236,9 +240,9 @@ class KeyboardPlayerPyGame(Player):
         # Display everything
         pygame.display.set_caption(f"{self.__class__.__name__}:fpv; h: {h} w:{w}; step{step}")
         fpv_doubled = cv2.resize(fpv, (2*w, 2*h))
-        fpv_pygame = convert_opencv_img_to_pygame(fpv_doubled)
-        hud_pygame = convert_opencv_img_to_pygame(hud_img)
-        minimap_pygame = convert_exploration_graph_to_pygame(minimap)
+        fpv_pygame = convert_opencv_img_to_pygame(fpv_doubled, True)
+        hud_pygame = convert_opencv_img_to_pygame(hud_img, True)
+        minimap_pygame = convert_opencv_img_to_pygame(minimap)
         self.screen.blit(fpv_pygame, (0, 0))
         self.screen.blit(hud_pygame, (2*w, 0))
         self.screen.blit(minimap_pygame, (2*w+50, 50))
