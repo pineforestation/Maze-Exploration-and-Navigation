@@ -116,9 +116,12 @@ class KeyboardPlayerPyGame(Player):
                 next_action = Action.BACKWARD
 
         if next_action == Action.FORWARD:
-            converted_heading = self.heading / 147 * 2 * math.pi
-            self.x += math.sin(converted_heading)
-            self.y += math.cos(converted_heading)
+            if self.check_for_collision_ahead():
+                next_action = Action.IDLE
+            else:
+                converted_heading = self.heading / 147 * 2 * math.pi
+                self.x += math.sin(converted_heading)
+                self.y += math.cos(converted_heading)
         elif next_action == Action.BACKWARD:
             converted_heading = self.heading / 147 * 2 * math.pi
             self.x -= math.sin(converted_heading)
@@ -132,6 +135,22 @@ class KeyboardPlayerPyGame(Player):
 
         sleep(0.01)
         return next_action
+    
+    def check_for_collision_ahead(self):
+        """
+            Check if there is floor visible at the bottom of the first-person view.
+            If not, we are about to hit a wall, so prevent moving forward.
+        """
+        fpv = self.fpv
+        w = fpv.shape[1]
+        width_to_check = 40
+
+        white_floor = [239, 239, 239]
+        blue_floor = [224, 186, 162]
+
+        bottom_row = fpv[-1, (w // 2 - width_to_check):(w // 2 + width_to_check), :]
+
+        return not ((bottom_row == white_floor) | (bottom_row == blue_floor)).all()
 
     def perform_custom_action(self, action):
         if action == CustomAction.QUARTER_TURN_LEFT:
