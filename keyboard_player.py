@@ -68,6 +68,8 @@ class KeyboardPlayerPyGame(Player):
             pygame.K_RIGHT: CustomAction.QUARTER_TURN_RIGHT,
             pygame.K_SPACE: Action.CHECKIN,
             pygame.K_ESCAPE: Action.QUIT,
+            pygame.K_q: Action.LEFT,
+            pygame.K_e: Action.RIGHT,
             pygame.K_w: CustomAction.MARK_NORTH_WALL,
             pygame.K_a: CustomAction.MARK_WEST_WALL,
             pygame.K_s: CustomAction.MARK_SOUTH_WALL,
