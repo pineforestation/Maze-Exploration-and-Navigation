@@ -1,5 +1,5 @@
 from vis_nav_game import Player, Action, Phase
-from enum import Enum
+from enum import Enum, IntEnum
 import pygame
 import numpy as np
 import cv2
@@ -30,11 +30,17 @@ class CustomAction(Enum):
     MARK_EAST_WALL = 38
     RESET_TRUE_NORTH = 39
 
+class OccupancyMap(IntEnum):
+    UNEXPLORED = 0
+    VISITED = 1
+    OBSTACLE = 2
 
 class KeyboardPlayerPyGame(Player):
     """
     Control manually using the keyboard.
     """
+
+    MAP_WIDTH = 300
 
     def __init__(self):
         self.fpv = None
@@ -48,12 +54,7 @@ class KeyboardPlayerPyGame(Player):
         self.y = 0
         self.heading = 0
 
-        self.exploration_graph = np.zeros(shape=(300, 300, 3), dtype=np.uint8)
-        for i in range(300):
-            self.exploration_graph[0][i] = [0, 0, 255]
-            self.exploration_graph[299][i] = [0, 0, 255]
-            self.exploration_graph[i][0] = [0, 0, 255]
-            self.exploration_graph[i][299] = [0, 0, 255]
+        self.occupancy_grid = np.zeros(shape=(self.MAP_WIDTH, self.MAP_WIDTH), dtype=np.uint8)
 
         super(KeyboardPlayerPyGame, self).__init__()
 
@@ -115,9 +116,21 @@ class KeyboardPlayerPyGame(Player):
             elif keys[pygame.K_DOWN]:
                 next_action = Action.BACKWARD
 
+        grid_coord_x = self.MAP_WIDTH // 2 + round(self.x)
+        grid_coord_y = self.MAP_WIDTH // 2 - round(self.y)
+
         if next_action == Action.FORWARD:
             if self.check_for_collision_ahead():
                 next_action = Action.IDLE
+                # TODO do this even if not moving forward
+                if self.heading == 0:
+                    self.occupancy_grid[grid_coord_y - 5][grid_coord_x] = OccupancyMap.OBSTACLE
+                elif self.heading == 36:
+                    self.occupancy_grid[grid_coord_y][grid_coord_x + 5] = OccupancyMap.OBSTACLE
+                elif self.heading == 73:
+                    self.occupancy_grid[grid_coord_y + 5][grid_coord_x] = OccupancyMap.OBSTACLE
+                elif self.heading == 110:
+                    self.occupancy_grid[grid_coord_y][grid_coord_x - 5] = OccupancyMap.OBSTACLE
             else:
                 converted_heading = self.heading / 147 * 2 * math.pi
                 self.x += math.sin(converted_heading)
@@ -131,9 +144,9 @@ class KeyboardPlayerPyGame(Player):
         elif next_action == Action.RIGHT:
             self.heading = (self.heading + 1) % 147
 
-        self.exploration_graph[150 - round(self.y)][150 + round(self.x)] = [255, 0, 0]
+        self.occupancy_grid[grid_coord_y][grid_coord_x] = OccupancyMap.VISITED
 
-        sleep(0.01)
+        # sleep(0.01)
         return next_action
     
     def check_for_collision_ahead(self):
@@ -164,17 +177,13 @@ class KeyboardPlayerPyGame(Player):
             else:
                 self.action_queue = [Action.IDLE] + [Action.RIGHT] * 37
         elif action == CustomAction.MARK_NORTH_WALL:
-            for i in range(300):
-                self.exploration_graph[150 - round(self.y) - 1][i] = [0, 255, 0]
+            self.occupancy_grid[self.MAP_WIDTH // 2 - round(self.y) - 1, :] = OccupancyMap.OBSTACLE
         elif action == CustomAction.MARK_SOUTH_WALL:
-            for i in range(300):
-                self.exploration_graph[150 - round(self.y) + 1][i] = [0, 255, 0]
+            self.occupancy_grid[self.MAP_WIDTH // 2 - round(self.y) + 1, :] = OccupancyMap.OBSTACLE
         elif action == CustomAction.MARK_WEST_WALL:
-            for i in range(300):
-                self.exploration_graph[i][150 + round(self.x) - 1] = [0, 255, 0]
+            self.occupancy_grid[:, self.MAP_WIDTH // 2 + round(self.x) - 1] = OccupancyMap.OBSTACLE
         elif action == CustomAction.MARK_EAST_WALL:
-            for i in range(300):
-                self.exploration_graph[i][150 + round(self.x) + 1] = [0, 255, 0]
+            self.occupancy_grid[:, self.MAP_WIDTH // 2 + round(self.x) + 1] = OccupancyMap.OBSTACLE
         elif action == CustomAction.RESET_TRUE_NORTH:
             self.heading = 0
         else:
@@ -214,6 +223,14 @@ class KeyboardPlayerPyGame(Player):
         super(KeyboardPlayerPyGame, self).set_target_images(images)
         self.show_target_images()
     
+    def convert_occupancy_to_cvimg(self):
+        shape = self.occupancy_grid.shape
+        height, width = shape
+        image = np.zeros((height, width, 3), dtype=np.uint8)
+        image[self.occupancy_grid == OccupancyMap.VISITED] = [255, 0, 0]
+        image[self.occupancy_grid == OccupancyMap.OBSTACLE] = [0, 255, 0]
+        return image
+        
     def see(self, fpv):
         if fpv is None or len(fpv.shape) < 3:
             return
@@ -248,7 +265,7 @@ class KeyboardPlayerPyGame(Player):
         cv2.putText(hud_img, f"heading={self.heading}", (w_offset, h_offset * 2), font, size, color, stroke, line)
         
         # Draw the position marker
-        minimap = np.copy(self.exploration_graph)
+        minimap = self.convert_occupancy_to_cvimg()
         marker_size = 10
         marker_img = np.zeros(shape=(marker_size, marker_size, 3), dtype=np.uint8)
         cv2.drawMarker(marker_img, (marker_size // 2, marker_size // 2), [0, 255, 0], cv2.MARKER_TRIANGLE_UP, marker_size)
