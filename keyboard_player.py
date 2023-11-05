@@ -40,7 +40,7 @@ class KeyboardPlayerPyGame(Player):
     Control manually using the keyboard.
     """
 
-    MAP_WIDTH = 300
+    MAP_WIDTH = 200
 
     def __init__(self):
         self.fpv = None
@@ -119,18 +119,21 @@ class KeyboardPlayerPyGame(Player):
         grid_coord_x = self.MAP_WIDTH // 2 + round(self.x)
         grid_coord_y = self.MAP_WIDTH // 2 - round(self.y)
 
+        wall_ahead = self.check_for_collision_ahead()
+        if wall_ahead and self.get_state() is not None:
+            if self.heading == 0:
+                self.occupancy_grid[grid_coord_y - 8:grid_coord_y - 5, grid_coord_x-6:grid_coord_x+6] = OccupancyMap.OBSTACLE
+            elif self.heading == 36:
+                self.occupancy_grid[grid_coord_y-6:grid_coord_y+6, grid_coord_x + 5:grid_coord_x + 8] = OccupancyMap.OBSTACLE
+            elif self.heading == 73:
+                self.occupancy_grid[grid_coord_y + 5:grid_coord_y + 8, grid_coord_x-6:grid_coord_x+6] = OccupancyMap.OBSTACLE
+            elif self.heading == 110:
+                self.occupancy_grid[grid_coord_y-6:grid_coord_y+6, grid_coord_x - 8:grid_coord_x - 5] = OccupancyMap.OBSTACLE
+
         if next_action == Action.FORWARD:
-            if self.check_for_collision_ahead():
+            if wall_ahead:
                 next_action = Action.IDLE
-                # TODO do this even if not moving forward
-                if self.heading == 0:
-                    self.occupancy_grid[grid_coord_y - 5][grid_coord_x] = OccupancyMap.OBSTACLE
-                elif self.heading == 36:
-                    self.occupancy_grid[grid_coord_y][grid_coord_x + 5] = OccupancyMap.OBSTACLE
-                elif self.heading == 73:
-                    self.occupancy_grid[grid_coord_y + 5][grid_coord_x] = OccupancyMap.OBSTACLE
-                elif self.heading == 110:
-                    self.occupancy_grid[grid_coord_y][grid_coord_x - 5] = OccupancyMap.OBSTACLE
+
             else:
                 converted_heading = self.heading / 147 * 2 * math.pi
                 self.x += math.sin(converted_heading)
@@ -271,19 +274,18 @@ class KeyboardPlayerPyGame(Player):
         cv2.drawMarker(marker_img, (marker_size // 2, marker_size // 2), [0, 255, 0], cv2.MARKER_TRIANGLE_UP, marker_size)
         rotation_matrix = cv2.getRotationMatrix2D((marker_img.shape[1] // 2, marker_img.shape[0] // 2), (self.heading / 147 * -360), 1)
         rotated_marker = cv2.warpAffine(marker_img, rotation_matrix, (marker_img.shape[1], marker_img.shape[0]))
-        x = 150 + round(self.x) - marker_size // 2
-        y = 150 - round(self.y) - marker_size // 2
+        x = self.MAP_WIDTH // 2 + round(self.x) - marker_size // 2
+        y = self.MAP_WIDTH // 2 - round(self.y) - marker_size // 2
         minimap[y:y+rotated_marker.shape[0], x:x+rotated_marker.shape[1]] = rotated_marker
 
         # Display everything
         pygame.display.set_caption(f"{self.__class__.__name__}:fpv; h: {h} w:{w}; step{step}")
-        fpv_doubled = cv2.resize(fpv, (2*w, 2*h))
-        fpv_pygame = convert_opencv_img_to_pygame(fpv_doubled, True)
+        fpv_pygame = convert_opencv_img_to_pygame(cv2.resize(fpv, (2*w, 2*h)), True)
         hud_pygame = convert_opencv_img_to_pygame(hud_img, True)
-        minimap_pygame = convert_opencv_img_to_pygame(minimap)
+        minimap_pygame = convert_opencv_img_to_pygame(cv2.resize(minimap, (2*w, 2*h)))
         self.screen.blit(fpv_pygame, (0, 0))
         self.screen.blit(hud_pygame, (2*w, 0))
-        self.screen.blit(minimap_pygame, (2*w+50, 50))
+        self.screen.blit(minimap_pygame, (2*w, 50))
         pygame.display.update()
 
 if __name__ == "__main__":
