@@ -1,36 +1,100 @@
+import numpy as np
 import cv2
-i=11
-while i < 24951:
-    color_image = cv2.imread("C:\\Users\\vaish\\OneDrive\\Desktop\\Semester 3\\perception\\SLAM2\\screenshot_"+str(i)+".jpg", cv2.IMREAD_COLOR)
-    # Load an image
-    image = cv2.imread("C:\\Users\\vaish\\OneDrive\\Desktop\\Semester 3\\perception\\SLAM2\\screenshot_"+str(i)+".jpg", cv2.IMREAD_GRAYSCALE)
-    if image is None:
-        i=i+1
-    else:
-        block_size = 2  # Neighborhood size for corner detection
-        ksize = 3       # Aperture parameter for Sobel operator
-        k = 0.02       # Harris detector free parameter
-        # Detect corners using the Harris Corner Detector
-        corners = cv2.cornerHarris(image, block_size, ksize, k)
-        # Threshold for an optimal value (adjust as needed)
-        threshold = 0.01 * corners.max()
-        # Draw corners on the image
-        image_with_corners = color_image.copy()
-        image_with_corners[corners > threshold] = 0
-        grad_x = cv2.Sobel(image_with_corners, cv2.CV_8U, 1, 0, ksize=3, borderType=cv2.BORDER_CONSTANT)
-        # Gradient-Y
-        grad_y = cv2.Sobel(image_with_corners, cv2.CV_8U, 0, 1, ksize=3, borderType=cv2.BORDER_CONSTANT)
-        abs_grad_x = cv2.convertScaleAbs(grad_x)
-        abs_grad_y = cv2.convertScaleAbs(grad_y)
-        grad = cv2.addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0)
-        # Display the image with corners
-        #cv2.imshow('Harris Corners', image_with_corners)
-        # Initialize SIFT detector
-        sift = cv2.SIFT_create()
-        # Detect SIFT features
-        kp, _ = sift.detectAndCompute(image,None)
-        image_with_keypoints = cv2.drawKeypoints(image,kp,grad)
-        cv2.imwrite("C:\\Users\\vaish\\OneDrive\\Desktop\\Semester 3\\perception\\SLAM2\\sobel_grad"+str(i)+".jpg",grad)
-        #cv2.imshow("sobel",grad)
-        cv2.waitKey(0)
-        i=i+1
+import os
+from scipy import ndimage
+from scipy.spatial import distance
+from sklearn.cluster import KMeans
+
+def load_images_from_folder(folder):
+    images = {}
+    i=0
+    for i in (0,10):
+        category = []
+        img_files = os.listdir(folder)
+        for image_file in img_files:
+            image_path = os.path.join(folder, image_file)
+            if os.path.isfile(image_path) and image_file.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
+                img = cv2.imread(image_path)
+                if img is not None:
+                    category.append(img)
+                    images[image_file]=img
+    i=i+1
+    return images
+
+images = load_images_from_folder("C:\\Users\\vaish\\vis_nav_player\\data\\exploration_views\\20231105-173027")  # take all images category by category 
+test = load_images_from_folder("C:\\Users\\vaish\\vis_nav_player\\data\\exploration_views") # take test images 
+print("done loading images")
+
+def sift_features(images):
+    sift_vectors = {}
+    descriptor_vectors = {}
+    descriptor_list = []
+    sift = cv2.SIFT_create()
+    for key,value in images.items():
+        features = []
+        for img in value:
+            des, kp = sift.detectAndCompute(img,None)
+            if des is not None:
+                descriptor_list.extend(des)
+                features.append(kp)
+        sift_vectors[key] = features
+        descriptor_vectors[key] = descriptor_list
+    return [descriptor_vectors, sift_vectors]
+
+sifts = sift_features(images) 
+
+descriptor_list = sifts[0] 
+print(descriptor_list.shape)
+all_bovw_feature = sifts[1] 
+target_image_descriptors = sift_features(test)[2]
+test_bovw_feature = sift_features(test)[1] 
+print("done")
+
+# def kmeans(k, descriptor_list):
+#     kmeans = KMeans(n_clusters = k)
+#     kmeans.fit(descriptor_list)
+#     visual_words = kmeans.cluster_centers_ 
+#     return visual_words
+
+def unsupervised_kmeans(k, descriptor_list):
+    kmeans = KMeans(n_clusters=k)
+    kmeans.fit(descriptor_list)
+    visual_words = kmeans.cluster_centers_
+    return visual_words
+
+visual_words_unsupervised = unsupervised_kmeans(150, descriptor_list)
+
+# visual_words = kmeans(150, descriptor_list) 
+
+def match_target_image(target_histogram, dataset_histograms):
+    best_match = None
+    min_distance = float('inf')
+
+    for key, histogram in dataset_histograms.items():
+        distance = np.linalg.norm(target_histogram - histogram)
+        if distance < min_distance:
+            min_distance = distance
+            best_match = key
+
+    return best_match
+
+def calculate_histogram(descriptors, visual_words):
+    # Create an array to store the histogram
+    histogram = np.zeros(len(visual_words))
+
+    for descriptor in descriptors:
+        # Find the nearest visual word for the descriptor
+        nearest_word = np.argmin(np.linalg.norm(visual_words - descriptor, axis=1))
+
+        # Increment the corresponding bin in the histogram
+        histogram[nearest_word] += 1
+
+    return histogram
+
+# Calculate the target image's histogram using unsupervised visual words
+target_histogram = calculate_histogram(target_image_descriptors, visual_words_unsupervised)
+dataset_histograms = calculate_histogram(descriptor_list, all_bovw_feature)
+# Perform matching to identify the target image
+best_match = match_target_image(target_histogram, dataset_histograms)
+
+print(f"The identified target image is: {best_match}")
