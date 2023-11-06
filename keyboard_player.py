@@ -1,11 +1,12 @@
 from vis_nav_game import Player, Action, Phase
-from enum import Enum, IntEnum
+from enum import Enum
 import pygame
 import numpy as np
 import cv2
 import math
 from time import sleep, strftime
 import os
+from path_search import OccupancyMap, AStar
 
 
 def convert_opencv_img_to_pygame(opencv_image, bgr_to_rb = False):
@@ -30,17 +31,17 @@ class CustomAction(Enum):
     MARK_EAST_WALL = 38
     RESET_TRUE_NORTH = 39
 
-class OccupancyMap(IntEnum):
-    UNEXPLORED = 0
-    VISITED = 1
-    OBSTACLE = 2
-
 class KeyboardPlayerPyGame(Player):
     """
     Control manually using the keyboard.
     """
 
     MAP_WIDTH = 200
+
+    HEADING_NORTH = 0
+    HEADING_EAST = 36
+    HEADING_SOUTH = 73
+    HEADING_WEST = 110
 
     def __init__(self):
         self.fpv = None
@@ -54,7 +55,12 @@ class KeyboardPlayerPyGame(Player):
         self.y = 0
         self.heading = 0
 
+        self.target_location = None
+
         self.occupancy_grid = np.zeros(shape=(self.MAP_WIDTH, self.MAP_WIDTH), dtype=np.uint8)
+        self.path = []
+        self.nav_point = None
+        self.path_overlay = None
 
         super(KeyboardPlayerPyGame, self).__init__()
 
@@ -93,7 +99,118 @@ class KeyboardPlayerPyGame(Player):
         self.heading = 0
         self.action_queue = []
 
+    def get_map_coord_x(self, raw_coord_x):
+        return self.MAP_WIDTH // 2 + round(raw_coord_x)
+    
+    def get_map_coord_y(self, raw_coord_y):
+        return self.MAP_WIDTH // 2 - round(raw_coord_y)
+    
     def act(self):
+        grid_coord_x = self.get_map_coord_x(self.x)
+        grid_coord_y = self.get_map_coord_y(self.y)
+
+        step = 0
+        phase = None
+        state = self.get_state()
+        if state is not None:
+          step = state[2]
+          phase = state[1]
+        
+        # At the start of the simulation, the robot takes a few seconds to settle into position.
+        # Tracking gets messed up if you try to move before this is done.
+        if step < 40:
+            return Action.IDLE
+        
+        if phase == Phase.NAVIGATION and len(self.path) > 0:
+            next_action = self.follow_path(grid_coord_x, grid_coord_y)
+        else:
+            next_action = self.manual_action()
+        
+        wall_ahead = (phase == Phase.EXPLORATION) and self.check_for_collision_ahead()
+        if wall_ahead:
+            # Draw the wall markers on the minimap
+            # TODO: Sometimes these are too wide, e.g. when coming at parallel at a wall, 
+            #       or when the wall is off to the side. We might want to make this more accurate.
+            if self.heading == self.HEADING_NORTH:
+                self.occupancy_grid[grid_coord_y - 8:grid_coord_y - 5, grid_coord_x-6:grid_coord_x+6] = OccupancyMap.OBSTACLE
+            elif self.heading == self.HEADING_EAST:
+                self.occupancy_grid[grid_coord_y-6:grid_coord_y+6, grid_coord_x + 5:grid_coord_x + 8] = OccupancyMap.OBSTACLE
+            elif self.heading == self.HEADING_SOUTH:
+                self.occupancy_grid[grid_coord_y + 5:grid_coord_y + 8, grid_coord_x-6:grid_coord_x+6] = OccupancyMap.OBSTACLE
+            elif self.heading == self.HEADING_WEST:
+                self.occupancy_grid[grid_coord_y-6:grid_coord_y+6, grid_coord_x - 8:grid_coord_x - 5] = OccupancyMap.OBSTACLE
+
+        if next_action == Action.FORWARD:
+            if wall_ahead:
+                next_action = Action.IDLE
+            else:
+                converted_heading = self.heading / 147 * 2 * math.pi
+                self.x += math.sin(converted_heading)
+                self.y += math.cos(converted_heading)
+        elif next_action == Action.BACKWARD:
+            converted_heading = self.heading / 147 * 2 * math.pi
+            self.x -= math.sin(converted_heading)
+            self.y -= math.cos(converted_heading)
+        elif next_action == Action.LEFT:
+            self.heading = (self.heading - 1) % 147
+        elif next_action == Action.RIGHT:
+            self.heading = (self.heading + 1) % 147
+
+        self.occupancy_grid[grid_coord_y-1:grid_coord_y+1, grid_coord_x-1:grid_coord_x+1] = OccupancyMap.VISITED
+
+        # For now, set the target to be the last location visited in the first phase.
+        # Later, this will be set by the result of Visual Place Recognition.
+        if phase == Phase.EXPLORATION:
+            self.target_location = (grid_coord_y, grid_coord_x)
+
+        return next_action
+    
+    def follow_path(self, grid_coord_x, grid_coord_y):
+        """ 
+            Automatically follow the path to the target as return by A* or other algorithm.
+        """
+        # If the current nav point has been reached, get the next one
+        if self.nav_point == (grid_coord_y, grid_coord_x):
+            if len(self.path) == 0:
+                return Action.CHECKIN
+            else:
+                self.nav_point = self.path.pop(0)
+
+        nav_y, nav_x = self.nav_point
+        if nav_y < grid_coord_y:
+            if self.heading == self.HEADING_NORTH:
+                return Action.FORWARD
+            elif self.heading <= self.HEADING_SOUTH:
+                return Action.LEFT
+            else:
+                return Action.RIGHT
+        elif nav_y > grid_coord_y:
+            if self.heading == self.HEADING_SOUTH:
+                return Action.FORWARD
+            elif self.heading < self.HEADING_SOUTH:
+                return Action.RIGHT
+            else:
+                return Action.LEFT
+        elif nav_x > grid_coord_x:
+            if self.heading == self.HEADING_EAST:
+                return Action.FORWARD
+            elif self.heading < self.HEADING_EAST or self.heading > self.HEADING_WEST:
+                return Action.RIGHT
+            else:
+                return Action.LEFT
+        elif nav_x < grid_coord_x:
+            if self.heading == self.HEADING_WEST:
+                return Action.FORWARD
+            elif self.heading < self.HEADING_WEST and self.heading > self.HEADING_EAST:
+                return Action.RIGHT
+            else:
+                return Action.LEFT
+        return Action.IDLE
+
+    def manual_action(self):
+        """
+            Let the player control using the keyboard.
+        """
         next_action = Action.IDLE
 
         if self.action_queue:
@@ -115,41 +232,6 @@ class KeyboardPlayerPyGame(Player):
                 next_action = Action.FORWARD
             elif keys[pygame.K_DOWN]:
                 next_action = Action.BACKWARD
-
-        grid_coord_x = self.MAP_WIDTH // 2 + round(self.x)
-        grid_coord_y = self.MAP_WIDTH // 2 - round(self.y)
-
-        wall_ahead = self.check_for_collision_ahead()
-        if wall_ahead and self.get_state() is not None:
-            if self.heading == 0:
-                self.occupancy_grid[grid_coord_y - 8:grid_coord_y - 5, grid_coord_x-6:grid_coord_x+6] = OccupancyMap.OBSTACLE
-            elif self.heading == 36:
-                self.occupancy_grid[grid_coord_y-6:grid_coord_y+6, grid_coord_x + 5:grid_coord_x + 8] = OccupancyMap.OBSTACLE
-            elif self.heading == 73:
-                self.occupancy_grid[grid_coord_y + 5:grid_coord_y + 8, grid_coord_x-6:grid_coord_x+6] = OccupancyMap.OBSTACLE
-            elif self.heading == 110:
-                self.occupancy_grid[grid_coord_y-6:grid_coord_y+6, grid_coord_x - 8:grid_coord_x - 5] = OccupancyMap.OBSTACLE
-
-        if next_action == Action.FORWARD:
-            if wall_ahead:
-                next_action = Action.IDLE
-
-            else:
-                converted_heading = self.heading / 147 * 2 * math.pi
-                self.x += math.sin(converted_heading)
-                self.y += math.cos(converted_heading)
-        elif next_action == Action.BACKWARD:
-            converted_heading = self.heading / 147 * 2 * math.pi
-            self.x -= math.sin(converted_heading)
-            self.y -= math.cos(converted_heading)
-        elif next_action == Action.LEFT:
-            self.heading = (self.heading - 1) % 147
-        elif next_action == Action.RIGHT:
-            self.heading = (self.heading + 1) % 147
-
-        self.occupancy_grid[grid_coord_y][grid_coord_x] = OccupancyMap.VISITED
-
-        # sleep(0.01)
         return next_action
     
     def check_for_collision_ahead(self):
@@ -170,23 +252,23 @@ class KeyboardPlayerPyGame(Player):
 
     def perform_custom_action(self, action):
         if action == CustomAction.QUARTER_TURN_LEFT:
-            if self.heading == 36:
+            if self.heading == self.HEADING_EAST:
                 self.action_queue = [Action.IDLE] + [Action.LEFT] * 36
             else:
                 self.action_queue = [Action.IDLE] + [Action.LEFT] * 37
         elif action == CustomAction.QUARTER_TURN_RIGHT:
-            if self.heading == 0:
+            if self.heading == self.HEADING_NORTH:
                 self.action_queue = [Action.IDLE] + [Action.RIGHT] * 36
             else:
                 self.action_queue = [Action.IDLE] + [Action.RIGHT] * 37
         elif action == CustomAction.MARK_NORTH_WALL:
-            self.occupancy_grid[self.MAP_WIDTH // 2 - round(self.y) - 1, :] = OccupancyMap.OBSTACLE
+            self.occupancy_grid[self.get_map_coord_y(self.y) - 1, :] = OccupancyMap.OBSTACLE
         elif action == CustomAction.MARK_SOUTH_WALL:
-            self.occupancy_grid[self.MAP_WIDTH // 2 - round(self.y) + 1, :] = OccupancyMap.OBSTACLE
+            self.occupancy_grid[self.get_map_coord_y(self.y) + 1, :] = OccupancyMap.OBSTACLE
         elif action == CustomAction.MARK_WEST_WALL:
-            self.occupancy_grid[:, self.MAP_WIDTH // 2 + round(self.x) - 1] = OccupancyMap.OBSTACLE
+            self.occupancy_grid[:, self.get_map_coord_x(self.x) - 1] = OccupancyMap.OBSTACLE
         elif action == CustomAction.MARK_EAST_WALL:
-            self.occupancy_grid[:, self.MAP_WIDTH // 2 + round(self.x) + 1] = OccupancyMap.OBSTACLE
+            self.occupancy_grid[:, self.get_map_coord_x(self.x) + 1] = OccupancyMap.OBSTACLE
         elif action == CustomAction.RESET_TRUE_NORTH:
             self.heading = 0
         else:
@@ -225,6 +307,17 @@ class KeyboardPlayerPyGame(Player):
     def set_target_images(self, images):
         super(KeyboardPlayerPyGame, self).set_target_images(images)
         self.show_target_images()
+
+        if images is None or len(images) <= 0:
+            return
+        
+        start = (100, 100)
+        self.path = AStar(start, self.target_location, self.occupancy_grid).perform_search()
+        shape = self.occupancy_grid.shape
+        self.path_overlay = np.zeros(shape, dtype=np.uint8)
+        for (y, x) in self.path:
+            self.path_overlay[y, x] = 1
+        self.nav_point = self.path.pop(0)
     
     def convert_occupancy_to_cvimg(self):
         shape = self.occupancy_grid.shape
@@ -232,6 +325,7 @@ class KeyboardPlayerPyGame(Player):
         image = np.zeros((height, width, 3), dtype=np.uint8)
         image[self.occupancy_grid == OccupancyMap.VISITED] = [255, 0, 0]
         image[self.occupancy_grid == OccupancyMap.OBSTACLE] = [0, 255, 0]
+        image[self.path_overlay == 1] = [0, 0, 255]
         return image
         
     def see(self, fpv):
@@ -274,9 +368,9 @@ class KeyboardPlayerPyGame(Player):
         cv2.drawMarker(marker_img, (marker_size // 2, marker_size // 2), [0, 255, 0], cv2.MARKER_TRIANGLE_UP, marker_size)
         rotation_matrix = cv2.getRotationMatrix2D((marker_img.shape[1] // 2, marker_img.shape[0] // 2), (self.heading / 147 * -360), 1)
         rotated_marker = cv2.warpAffine(marker_img, rotation_matrix, (marker_img.shape[1], marker_img.shape[0]))
-        x = self.MAP_WIDTH // 2 + round(self.x) - marker_size // 2
-        y = self.MAP_WIDTH // 2 - round(self.y) - marker_size // 2
-        minimap[y:y+rotated_marker.shape[0], x:x+rotated_marker.shape[1]] = rotated_marker
+        x = self.get_map_coord_x(self.x) - marker_size // 2
+        y = self.get_map_coord_y(self.y) - marker_size // 2
+        minimap[y:y+rotated_marker.shape[0], x:x+rotated_marker.shape[1]][rotated_marker != [0, 0, 0]] = rotated_marker[rotated_marker != [0, 0, 0]]
 
         # Display everything
         pygame.display.set_caption(f"{self.__class__.__name__}:fpv; h: {h} w:{w}; step{step}")
