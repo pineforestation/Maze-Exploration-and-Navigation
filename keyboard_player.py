@@ -7,6 +7,7 @@ import math
 from time import sleep, strftime
 import os
 from path_search import OccupancyMap, AStar
+from feature_extraction import BovwPlaceRecognition
 
 
 def convert_opencv_img_to_pygame(opencv_image, bgr_to_rb = False):
@@ -22,6 +23,7 @@ def convert_opencv_img_to_pygame(opencv_image, bgr_to_rb = False):
 
     return pygame_image
 
+
 class CustomAction(Enum):
     QUARTER_TURN_LEFT = 33
     QUARTER_TURN_RIGHT = 34
@@ -30,6 +32,8 @@ class CustomAction(Enum):
     MARK_SOUTH_WALL = 37
     MARK_EAST_WALL = 38
     RESET_TRUE_NORTH = 39
+    PROCESS_EXPLORATION_IMAGES = 40
+
 
 class KeyboardPlayerPyGame(Player):
     """
@@ -56,6 +60,7 @@ class KeyboardPlayerPyGame(Player):
         self.heading = 0
 
         self.target_location = None
+        self.vpr = None
 
         self.occupancy_grid = np.zeros(shape=(self.MAP_WIDTH, self.MAP_WIDTH), dtype=np.uint8)
         self.path = []
@@ -63,6 +68,7 @@ class KeyboardPlayerPyGame(Player):
         self.path_overlay = None
 
         super(KeyboardPlayerPyGame, self).__init__()
+
 
     def reset(self):
         self.fpv = None
@@ -82,10 +88,12 @@ class KeyboardPlayerPyGame(Player):
             pygame.K_s: CustomAction.MARK_SOUTH_WALL,
             pygame.K_d: CustomAction.MARK_EAST_WALL,
             pygame.K_n: CustomAction.RESET_TRUE_NORTH,
+            pygame.K_RETURN: CustomAction.PROCESS_EXPLORATION_IMAGES,
         }
 
         self.filepath = './data/exploration_views/' + strftime("%Y%m%d-%H%M%S")
         os.makedirs(self.filepath, exist_ok=True)
+
 
     def pre_exploration(self):
         self.x = 0
@@ -93,18 +101,22 @@ class KeyboardPlayerPyGame(Player):
         self.heading = 0
         self.action_queue = []
 
+
     def pre_navigation(self):
         self.x = 0
         self.y = 0
         self.heading = 0
         self.action_queue = []
 
+
     def get_map_coord_x(self, raw_coord_x):
         return self.MAP_WIDTH // 2 + round(raw_coord_x)
-    
+
+
     def get_map_coord_y(self, raw_coord_y):
         return self.MAP_WIDTH // 2 - round(raw_coord_y)
-    
+
+
     def act(self):
         grid_coord_x = self.get_map_coord_x(self.x)
         grid_coord_y = self.get_map_coord_y(self.y)
@@ -164,7 +176,8 @@ class KeyboardPlayerPyGame(Player):
             self.target_location = (grid_coord_y, grid_coord_x)
 
         return next_action
-    
+
+
     def follow_path(self, grid_coord_x, grid_coord_y):
         """ 
             Automatically follow the path to the target as return by A* or other algorithm.
@@ -207,6 +220,7 @@ class KeyboardPlayerPyGame(Player):
                 return Action.LEFT
         return Action.IDLE
 
+
     def manual_action(self):
         """
             Let the player control using the keyboard.
@@ -223,7 +237,7 @@ class KeyboardPlayerPyGame(Player):
                 elif event.type == pygame.KEYDOWN and event.key in self.keymap:
                     action = self.keymap[event.key]
                     if isinstance(action, CustomAction):
-                        self.perform_custom_action(action)
+                        next_action = self.perform_custom_action(action)
                     elif isinstance(action, Action):
                         next_action = action
 
@@ -233,7 +247,8 @@ class KeyboardPlayerPyGame(Player):
             elif keys[pygame.K_DOWN]:
                 next_action = Action.BACKWARD
         return next_action
-    
+
+
     def check_for_collision_ahead(self):
         """
             Check if there is floor visible at the bottom of the first-person view.
@@ -250,7 +265,10 @@ class KeyboardPlayerPyGame(Player):
 
         return not ((bottom_row == white_floor) | (bottom_row == blue_floor)).all()
 
+
     def perform_custom_action(self, action):
+        next_action = Action.IDLE
+
         if action == CustomAction.QUARTER_TURN_LEFT:
             if self.heading == self.HEADING_EAST:
                 self.action_queue = [Action.IDLE] + [Action.LEFT] * 36
@@ -271,9 +289,20 @@ class KeyboardPlayerPyGame(Player):
             self.occupancy_grid[:, self.get_map_coord_x(self.x) + 1] = OccupancyMap.OBSTACLE
         elif action == CustomAction.RESET_TRUE_NORTH:
             self.heading = 0
+        elif action == CustomAction.PROCESS_EXPLORATION_IMAGES:
+            self.process_exploration_images()
+            next_action = Action.QUIT
         else:
             raise NotImplementedError(f"Unknown custom action: {action}")
+
+        return next_action
+
+   
+    def process_exploration_images(self):
+        self.vpr = BovwPlaceRecognition()
+        self.vpr.build_database(self.filepath)
         
+
     def show_target_images(self):
         targets = self.get_target_images()
         if targets is None or len(targets) <= 0:
@@ -305,14 +334,18 @@ class KeyboardPlayerPyGame(Player):
         cv2.imwrite(os.path.join(self.filepath, f"target_image.png"), concat_img)
         cv2.waitKey(1)
 
+
     def set_target_images(self, images):
         super(KeyboardPlayerPyGame, self).set_target_images(images)
         self.show_target_images()
 
         if images is None or len(images) <= 0:
             return
+
+        match_for_target_1 = self.vpr.query_by_image(images[0])
+        print(f"##################### {match_for_target_1}")
         
-        start = (100, 100)
+        start = (self.get_map_coord_x(0), self.get_map_coord_y(0))
         self.path = AStar(start, self.target_location, self.occupancy_grid).perform_search()
         shape = self.occupancy_grid.shape
         self.path_overlay = np.zeros(shape, dtype=np.uint8)
@@ -320,6 +353,7 @@ class KeyboardPlayerPyGame(Player):
             self.path_overlay[y, x] = 1
         self.nav_point = self.path.pop(0)
     
+
     def convert_occupancy_to_cvimg(self):
         shape = self.occupancy_grid.shape
         height, width = shape
@@ -328,7 +362,8 @@ class KeyboardPlayerPyGame(Player):
         image[self.occupancy_grid == OccupancyMap.OBSTACLE] = [0, 255, 0]
         image[self.path_overlay == 1] = [0, 0, 255]
         return image
-        
+
+
     def see(self, fpv):
         if fpv is None or len(fpv.shape) < 3:
             return
@@ -382,6 +417,7 @@ class KeyboardPlayerPyGame(Player):
         self.screen.blit(hud_pygame, (2*w, 0))
         self.screen.blit(minimap_pygame, (2*w, 50))
         pygame.display.update()
+
 
 if __name__ == "__main__":
     import vis_nav_game

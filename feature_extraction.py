@@ -1,100 +1,83 @@
 import numpy as np
 import cv2
 import os
-from scipy import ndimage
-from scipy.spatial import distance
 from sklearn.cluster import KMeans
 
-def load_images_from_folder(folder):
-    images = {}
-    i=0
-    for i in (0,10):
-        category = []
-        img_files = os.listdir(folder)
-        for image_file in img_files:
-            image_path = os.path.join(folder, image_file)
-            if os.path.isfile(image_path) and image_file.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
-                img = cv2.imread(image_path)
-                if img is not None:
-                    category.append(img)
-                    images[image_file]=img
-    i=i+1
-    return images
+class BovwPlaceRecognition:
+    def __init__(self):
+        self.num_clusters = 150 # TODO tune this parameter
+        self.sift = cv2.SIFT_create()
+        self.training_img_histograms = {}
+        self.visual_words = []
 
-images = load_images_from_folder("C:\\Users\\vaish\\vis_nav_player\\data\\exploration_views\\20231105-173027")  # take all images category by category 
-test = load_images_from_folder("C:\\Users\\vaish\\vis_nav_player\\data\\exploration_views") # take test images 
-print("done loading images")
 
-def sift_features(images):
-    sift_vectors = {}
-    descriptor_vectors = {}
-    descriptor_list = []
-    sift = cv2.SIFT_create()
-    for key,value in images.items():
-        features = []
-        for img in value:
-            des, kp = sift.detectAndCompute(img,None)
+    def load_images_from_folder(self, folder):
+        images = {}
+        for image_name in os.listdir(folder):
+            image_path = os.path.join(folder, image_name)
+            images[image_name] = cv2.imread(image_path)
+        return images
+
+
+    def sift_features(self, images):
+        descriptor_list = []
+        image_to_descriptors = {}
+
+        for key, img in images.items():
+            _kp, des = self.sift.detectAndCompute(img, None)
             if des is not None:
                 descriptor_list.extend(des)
-                features.append(kp)
-        sift_vectors[key] = features
-        descriptor_vectors[key] = descriptor_list
-    return [descriptor_vectors, sift_vectors]
+                image_to_descriptors[key] = des
+        return descriptor_list, image_to_descriptors
 
-sifts = sift_features(images) 
 
-descriptor_list = sifts[0] 
-print(descriptor_list.shape)
-all_bovw_feature = sifts[1] 
-target_image_descriptors = sift_features(test)[2]
-test_bovw_feature = sift_features(test)[1] 
-print("done")
+    def unsupervised_kmeans(self, descriptor_list):
+        kmeans = KMeans(n_clusters=self.num_clusters)
+        kmeans.fit(descriptor_list)
+        visual_words = kmeans.cluster_centers_
+        return visual_words
 
-# def kmeans(k, descriptor_list):
-#     kmeans = KMeans(n_clusters = k)
-#     kmeans.fit(descriptor_list)
-#     visual_words = kmeans.cluster_centers_ 
-#     return visual_words
 
-def unsupervised_kmeans(k, descriptor_list):
-    kmeans = KMeans(n_clusters=k)
-    kmeans.fit(descriptor_list)
-    visual_words = kmeans.cluster_centers_
-    return visual_words
+    def calculate_histogram(self, descriptors, visual_words):
+        # Create an array to store the histogram
+        histogram = np.zeros(len(visual_words))
 
-visual_words_unsupervised = unsupervised_kmeans(150, descriptor_list)
+        for descriptor in descriptors:
+            # Find the nearest visual word for the descriptor
+            nearest_word = np.argmin(np.linalg.norm(visual_words - descriptor, axis=1))
+            # Increment the corresponding bin in the histogram
+            histogram[nearest_word] += 1
 
-# visual_words = kmeans(150, descriptor_list) 
+        return histogram
 
-def match_target_image(target_histogram, dataset_histograms):
-    best_match = None
-    min_distance = float('inf')
 
-    for key, histogram in dataset_histograms.items():
-        distance = np.linalg.norm(target_histogram - histogram)
-        if distance < min_distance:
-            min_distance = distance
-            best_match = key
+    def build_database(self, image_folder):
+        training_images = self.load_images_from_folder(image_folder)
 
-    return best_match
+        descriptor_list, image_to_descriptors = self.sift_features(training_images)
+        self.visual_words = self.unsupervised_kmeans(descriptor_list)
 
-def calculate_histogram(descriptors, visual_words):
-    # Create an array to store the histogram
-    histogram = np.zeros(len(visual_words))
+        for key, desc in image_to_descriptors.items():
+            hist = self.calculate_histogram(desc, self.visual_words)
+            self.training_img_histograms[key] = hist
 
-    for descriptor in descriptors:
-        # Find the nearest visual word for the descriptor
-        nearest_word = np.argmin(np.linalg.norm(visual_words - descriptor, axis=1))
 
-        # Increment the corresponding bin in the histogram
-        histogram[nearest_word] += 1
+    def get_tentative_match(self, target_histogram, dataset_histograms):
+        best_match = None
+        min_distance = float('inf')
 
-    return histogram
+        for key, histogram in dataset_histograms.items():
+            distance = np.linalg.norm(target_histogram - histogram)
+            if distance < min_distance:
+                min_distance = distance
+                best_match = key
 
-# Calculate the target image's histogram using unsupervised visual words
-target_histogram = calculate_histogram(target_image_descriptors, visual_words_unsupervised)
-dataset_histograms = calculate_histogram(descriptor_list, all_bovw_feature)
-# Perform matching to identify the target image
-best_match = match_target_image(target_histogram, dataset_histograms)
+        return best_match
 
-print(f"The identified target image is: {best_match}")
+
+    def query_by_image(self, query_img):
+        _kp, des = self.sift.detectAndCompute(query_img, None)
+        query_hist = self.calculate_histogram(des, self.visual_words)
+        match = self.get_tentative_match(query_hist, self.training_img_histograms)
+        # TODO geometric verification
+        return match #TODO this is just filename, get the actual image
