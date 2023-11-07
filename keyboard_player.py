@@ -7,7 +7,7 @@ import math
 from time import sleep, strftime
 import os
 from path_search import OccupancyMap, AStar
-from feature_extraction import BovwPlaceRecognition
+from visual_place_recognition import BovwPlaceRecognition
 
 
 def convert_opencv_img_to_pygame(opencv_image, bgr_to_rb = False):

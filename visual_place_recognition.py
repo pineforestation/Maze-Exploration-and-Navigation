@@ -11,7 +11,26 @@ class BovwPlaceRecognition:
         self.visual_words = []
 
 
-    def load_images_from_folder(self, folder):
+    def build_database(self, image_folder):
+        training_images = self._load_images_from_folder(image_folder)
+
+        descriptor_list, image_to_descriptors = self._compute_sift_features(training_images)
+        self.visual_words = self._build_visual_words(descriptor_list)
+
+        for key, desc in image_to_descriptors.items():
+            hist = self._calculate_histogram(desc, self.visual_words)
+            self.training_img_histograms[key] = hist
+
+
+    def query_by_image(self, query_img):
+        _kp, des = self.sift.detectAndCompute(query_img, None)
+        query_hist = self._calculate_histogram(des, self.visual_words)
+        match = self._get_tentative_match(query_hist, self.training_img_histograms)
+        # TODO geometric verification
+        return match #TODO this is just filename, get the actual image
+
+
+    def _load_images_from_folder(self, folder):
         images = {}
         for image_name in os.listdir(folder):
             image_path = os.path.join(folder, image_name)
@@ -19,7 +38,7 @@ class BovwPlaceRecognition:
         return images
 
 
-    def sift_features(self, images):
+    def _compute_sift_features(self, images):
         descriptor_list = []
         image_to_descriptors = {}
 
@@ -31,14 +50,14 @@ class BovwPlaceRecognition:
         return descriptor_list, image_to_descriptors
 
 
-    def unsupervised_kmeans(self, descriptor_list):
+    def _build_visual_words(self, descriptor_list):
         kmeans = KMeans(n_clusters=self.num_clusters)
         kmeans.fit(descriptor_list)
         visual_words = kmeans.cluster_centers_
         return visual_words
 
 
-    def calculate_histogram(self, descriptors, visual_words):
+    def _calculate_histogram(self, descriptors, visual_words):
         # Create an array to store the histogram
         histogram = np.zeros(len(visual_words))
 
@@ -51,18 +70,7 @@ class BovwPlaceRecognition:
         return histogram
 
 
-    def build_database(self, image_folder):
-        training_images = self.load_images_from_folder(image_folder)
-
-        descriptor_list, image_to_descriptors = self.sift_features(training_images)
-        self.visual_words = self.unsupervised_kmeans(descriptor_list)
-
-        for key, desc in image_to_descriptors.items():
-            hist = self.calculate_histogram(desc, self.visual_words)
-            self.training_img_histograms[key] = hist
-
-
-    def get_tentative_match(self, target_histogram, dataset_histograms):
+    def _get_tentative_match(self, target_histogram, dataset_histograms):
         best_match = None
         min_distance = float('inf')
 
@@ -73,11 +81,3 @@ class BovwPlaceRecognition:
                 best_match = key
 
         return best_match
-
-
-    def query_by_image(self, query_img):
-        _kp, des = self.sift.detectAndCompute(query_img, None)
-        query_hist = self.calculate_histogram(des, self.visual_words)
-        match = self.get_tentative_match(query_hist, self.training_img_histograms)
-        # TODO geometric verification
-        return match #TODO this is just filename, get the actual image
