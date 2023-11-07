@@ -4,7 +4,7 @@ import pygame
 import numpy as np
 import cv2
 import math
-from time import sleep, strftime
+from time import sleep, strftime, time
 import os
 from path_search import OccupancyMap, AStar
 from visual_place_recognition import BovwPlaceRecognition
@@ -59,13 +59,14 @@ class KeyboardPlayerPyGame(Player):
         self.y = 0
         self.heading = 0
 
-        self.target_location = None
         self.vpr = None
 
         self.occupancy_grid = np.zeros(shape=(self.MAP_WIDTH, self.MAP_WIDTH), dtype=np.uint8)
         self.path = []
         self.nav_point = None
         self.path_overlay = None
+
+        self.nav_phase_start = None
 
         super(KeyboardPlayerPyGame, self).__init__()
 
@@ -107,6 +108,7 @@ class KeyboardPlayerPyGame(Player):
         self.y = 0
         self.heading = 0
         self.action_queue = []
+        self.nav_phase_start = time()
 
 
     def get_map_coord_x(self, raw_coord_x):
@@ -133,7 +135,7 @@ class KeyboardPlayerPyGame(Player):
         if step < 40:
             return Action.IDLE
         
-        if phase == Phase.NAVIGATION and len(self.path) > 0:
+        if phase == Phase.NAVIGATION and self.nav_point is not None:
             next_action = self.follow_path(grid_coord_x, grid_coord_y)
         else:
             next_action = self.manual_action()
@@ -170,11 +172,6 @@ class KeyboardPlayerPyGame(Player):
 
         self.occupancy_grid[grid_coord_y-1:grid_coord_y+1, grid_coord_x-1:grid_coord_x+1] = OccupancyMap.VISITED
 
-        # For now, set the target to be the last location visited in the first phase.
-        # Later, this will be set by the result of Visual Place Recognition.
-        if phase == Phase.EXPLORATION:
-            self.target_location = (grid_coord_y, grid_coord_x)
-
         return next_action
 
 
@@ -185,6 +182,9 @@ class KeyboardPlayerPyGame(Player):
         # If the current nav point has been reached, get the next one
         if self.nav_point == (grid_coord_y, grid_coord_x):
             if len(self.path) == 0:
+                self.nav_point = None
+                end_time = time()
+                print(f"reached goal in {end_time - self.nav_phase_start} seconds")
                 return Action.CHECKIN
             else:
                 self.nav_point = self.path.pop(0)
@@ -300,7 +300,9 @@ class KeyboardPlayerPyGame(Player):
    
     def process_exploration_images(self):
         self.vpr = BovwPlaceRecognition()
+        print("Begin building BOVW-VPR database")
         self.vpr.build_database(self.filepath)
+        print("Finished building BOVW-VPR database")
         
 
     def show_target_images(self):
@@ -310,6 +312,8 @@ class KeyboardPlayerPyGame(Player):
         hor1 = cv2.hconcat(targets[:2])
         hor2 = cv2.hconcat(targets[2:])
         concat_img = cv2.vconcat([hor1, hor2])
+
+        cv2.imshow(f'target1', targets[0])
 
         w, h = concat_img.shape[:2]
         
@@ -342,16 +346,24 @@ class KeyboardPlayerPyGame(Player):
         if images is None or len(images) <= 0:
             return
 
-        match_for_target_1 = self.vpr.query_by_image(images[0])
-        print(f"##################### {match_for_target_1}")
-        
         start = (self.get_map_coord_x(0), self.get_map_coord_y(0))
-        self.path = AStar(start, self.target_location, self.occupancy_grid).perform_search()
-        shape = self.occupancy_grid.shape
-        self.path_overlay = np.zeros(shape, dtype=np.uint8)
-        for (y, x) in self.path:
-            self.path_overlay[y, x] = 1
-        self.nav_point = self.path.pop(0)
+
+        match_for_target_1 = self.vpr.query_by_image(images[0])
+        
+        goal_x, goal_y, _heading = self.decode_filename(match_for_target_1)
+
+        start = (self.get_map_coord_x(0), self.get_map_coord_y(0))
+        goal = (self.get_map_coord_y(goal_y), self.get_map_coord_x(goal_x))
+
+        self.path = AStar(start, goal, self.occupancy_grid).perform_search()
+        if len(self.path) > 0:
+            shape = self.occupancy_grid.shape
+            self.path_overlay = np.zeros(shape, dtype=np.uint8)
+            for (y, x) in self.path:
+                self.path_overlay[y, x] = 1
+            self.nav_point = self.path.pop(0)
+        else:
+            print("Could not find a path between f{start} and f{goal}")
     
 
     def convert_occupancy_to_cvimg(self):
@@ -363,6 +375,13 @@ class KeyboardPlayerPyGame(Player):
         image[self.path_overlay == 1] = [0, 0, 255]
         return image
 
+
+    def decode_filename(self, filename):
+        info = filename.split('_')
+        x = int(info[1])
+        y = int(info[2])
+        heading = int(info[3])
+        return x, y, heading
 
     def see(self, fpv):
         if fpv is None or len(fpv.shape) < 3:
@@ -383,7 +402,7 @@ class KeyboardPlayerPyGame(Player):
           step = state[2]
           phase = state[1]
         if phase == Phase.EXPLORATION and step % 5 == 1:
-            cv2.imwrite(os.path.join(self.filepath, f"{step}_{self.x}_{self.y}_{self.heading}.png"), fpv)
+            cv2.imwrite(os.path.join(self.filepath, f"{step}_{round(self.x)}_{round(self.y)}_{self.heading}_.png"), fpv)
 
         # Draw the heads up display (HUD) and the mini-map
         hud_img = np.zeros(shape=(h,w,3), dtype=np.uint8)

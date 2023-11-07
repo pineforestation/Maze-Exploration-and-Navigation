@@ -51,7 +51,7 @@ class BovwPlaceRecognition:
 
 
     def _build_visual_words(self, descriptor_list):
-        kmeans = KMeans(n_clusters=self.num_clusters)
+        kmeans = KMeans(n_clusters=self.num_clusters, verbose=1)
         kmeans.fit(descriptor_list)
         visual_words = kmeans.cluster_centers_
         return visual_words
