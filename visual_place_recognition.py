@@ -7,14 +7,15 @@ class BovwPlaceRecognition:
     def __init__(self):
         self.num_clusters = 150 # TODO tune this parameter
         self.sift = cv2.SIFT_create()
+        self.images = {}
         self.training_img_histograms = {}
         self.visual_words = []
 
 
     def build_database(self, image_folder):
-        training_images = self._load_images_from_folder(image_folder)
+        self.images = self._load_images_from_folder(image_folder)
 
-        descriptor_list, image_to_descriptors = self._compute_sift_features(training_images)
+        descriptor_list, image_to_descriptors = self._compute_sift_features(self.images)
         self.visual_words = self._build_visual_words(descriptor_list)
 
         for key, desc in image_to_descriptors.items():
@@ -25,9 +26,10 @@ class BovwPlaceRecognition:
     def query_by_image(self, query_img):
         _kp, des = self.sift.detectAndCompute(query_img, None)
         query_hist = self._calculate_histogram(des, self.visual_words)
-        match = self._get_tentative_match(query_hist, self.training_img_histograms)
+        match_filename, match_distance = self._get_tentative_match(query_hist, self.training_img_histograms)
+        match_img = self.images[match_filename]
         # TODO geometric verification
-        return match #TODO this is just filename, get the actual image
+        return match_filename, match_img, match_distance
 
 
     def _load_images_from_folder(self, folder):
@@ -80,4 +82,4 @@ class BovwPlaceRecognition:
                 min_distance = distance
                 best_match = key
 
-        return best_match
+        return best_match, min_distance

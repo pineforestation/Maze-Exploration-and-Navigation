@@ -170,7 +170,7 @@ class KeyboardPlayerPyGame(Player):
         elif next_action == Action.RIGHT:
             self.heading = (self.heading + 1) % 147
 
-        self.occupancy_grid[grid_coord_y-1:grid_coord_y+1, grid_coord_x-1:grid_coord_x+1] = OccupancyMap.VISITED
+        self.occupancy_grid[grid_coord_y-1:grid_coord_y, grid_coord_x-1:grid_coord_x] = OccupancyMap.VISITED
 
         return next_action
 
@@ -313,8 +313,6 @@ class KeyboardPlayerPyGame(Player):
         hor2 = cv2.hconcat(targets[2:])
         concat_img = cv2.vconcat([hor1, hor2])
 
-        cv2.imshow(f'target1', targets[0])
-
         w, h = concat_img.shape[:2]
         
         color = (0, 0, 0)
@@ -346,14 +344,31 @@ class KeyboardPlayerPyGame(Player):
         if images is None or len(images) <= 0:
             return
 
-        start = (self.get_map_coord_x(0), self.get_map_coord_y(0))
+        comparisons = []
+        target_positions = np.zeros((len(images), 2), dtype=np.int8)
+        for i in range(4):
+            match_filename, match_img, match_distance = self.vpr.query_by_image(images[i])
+            comparisons.append(cv2.vconcat([images[i], match_img]))
 
-        match_for_target_1 = self.vpr.query_by_image(images[0])
+            goal_x, goal_y, _heading = self.decode_filename(match_filename)
+            print(f"Target_{i} (x,y): {goal_x}, {goal_y}; confidence is {match_distance}")
+            target_positions[i] = (goal_x, goal_y)
+
+        average_position = target_positions.mean(axis=0)
+        target_guess = None
+        min_distance = float('inf')
+        for i in range(4):
+            distance = np.linalg.norm(average_position - target_positions[i])
+            if distance < min_distance:
+                min_distance = distance
+                target_guess = target_positions[i]
+        print(f"Choosing {target_positions[i]} as the target position.")
         
-        goal_x, goal_y, _heading = self.decode_filename(match_for_target_1)
+        cv2.imshow('top: actual target ; bottom: matched image', cv2.hconcat(comparisons))
+        # Todo show with labels. Front, "right", back, "left"
 
         start = (self.get_map_coord_x(0), self.get_map_coord_y(0))
-        goal = (self.get_map_coord_y(goal_y), self.get_map_coord_x(goal_x))
+        goal = (self.get_map_coord_y(target_guess[1]), self.get_map_coord_x(target_guess[0]))
 
         self.path = AStar(start, goal, self.occupancy_grid).perform_search()
         if len(self.path) > 0:
