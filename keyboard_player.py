@@ -165,8 +165,16 @@ class KeyboardPlayerPyGame(Player):
                 next_action = Action.IDLE
             else:
                 converted_heading = self.heading / 147 * 2 * math.pi
-                self.x += math.sin(converted_heading)
-                self.y += math.cos(converted_heading)
+                # self.x += math.sin(converted_heading)
+                # self.y += math.cos(converted_heading)
+                if self.heading == self.HEADING_WEST:
+                    self.x -= 1
+                elif self.heading == self.HEADING_NORTH:
+                    self.y += 1
+                elif self.heading == self.HEADING_SOUTH:
+                    self.y -= 1
+                elif self.heading == self.HEADING_EAST:
+                    self.x += 1
         elif next_action == Action.BACKWARD:
             converted_heading = self.heading / 147 * 2 * math.pi
             self.x -= math.sin(converted_heading)
@@ -176,7 +184,7 @@ class KeyboardPlayerPyGame(Player):
         elif next_action == Action.RIGHT:
             self.heading = (self.heading + 1) % 147
 
-        self.occupancy_grid[grid_coord_y-1:grid_coord_y+1, grid_coord_x-1:grid_coord_x+1] = OccupancyMap.VISITED
+        self.occupancy_grid[grid_coord_y, grid_coord_x] = OccupancyMap.VISITED
 
         return next_action
 
@@ -383,7 +391,7 @@ class KeyboardPlayerPyGame(Player):
             if distance < min_distance:
                 min_distance = distance
                 target_guess = target_positions[i]
-        print(f"Choosing {target_positions[i]} as the target position.")
+        print(f"Choosing {target_guess} as the target position.")
         self.show_target_images(all_matched_imgs, target_positions, target_guess)
 
         start = (self.get_map_coord_x(0), self.get_map_coord_y(0))
@@ -440,16 +448,17 @@ class KeyboardPlayerPyGame(Player):
             cv2.imwrite(os.path.join(self.filepath, f"{step}_{round(self.x)}_{round(self.y)}_{self.heading}_.png"), fpv)
 
         # Draw the heads up display (HUD) and the mini-map
-        hud_img = np.zeros(shape=(h,w,3), dtype=np.uint8)
-        w_offset = 10
-        h_offset = 20
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        line = cv2.LINE_AA
-        size = 0.75
-        stroke = 1
-        color = (255, 255, 255)
-        cv2.putText(hud_img, f"x={self.x:.2f}, y={self.y:.2f}", (w_offset, h_offset), font, size, color, stroke, line)
-        cv2.putText(hud_img, f"heading={self.heading}", (w_offset, h_offset * 2), font, size, color, stroke, line)
+        if phase == Phase.EXPLORATION:
+            hud_img = np.zeros(shape=(h,w,3), dtype=np.uint8)
+            w_offset = 10
+            h_offset = 20
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            line = cv2.LINE_AA
+            size = 0.75
+            stroke = 1
+            color = (255, 255, 255)
+            cv2.putText(hud_img, f"x={self.x:.2f}, y={self.y:.2f}", (w_offset, h_offset), font, size, color, stroke, line)
+            cv2.putText(hud_img, f"heading={self.heading}", (w_offset, h_offset * 2), font, size, color, stroke, line)
         
         # Draw the position marker
         minimap = self.convert_occupancy_to_cvimg()
@@ -465,11 +474,12 @@ class KeyboardPlayerPyGame(Player):
         # Display everything
         pygame.display.set_caption(f"{self.__class__.__name__}:fpv; h: {h} w:{w}; step{step}")
         fpv_pygame = convert_opencv_img_to_pygame(cv2.resize(fpv, (2*w, 2*h)), True)
-        hud_pygame = convert_opencv_img_to_pygame(hud_img, True)
         minimap_pygame = convert_opencv_img_to_pygame(cv2.resize(minimap, (2*w, 2*h)))
         self.screen.blit(fpv_pygame, (0, 0))
-        self.screen.blit(hud_pygame, (2*w, 0))
         self.screen.blit(minimap_pygame, (2*w, 50))
+        if phase == Phase.EXPLORATION:
+            hud_pygame = convert_opencv_img_to_pygame(hud_img, True)
+            self.screen.blit(hud_pygame, (2*w, 0))
         pygame.display.update()
 
 
