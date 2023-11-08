@@ -311,50 +311,65 @@ class KeyboardPlayerPyGame(Player):
         print("Finished building BOVW-VPR database")
         
 
-    def show_target_images(self):
-        targets = self.get_target_images()
-        if targets is None or len(targets) <= 0:
-            return
-        hor1 = cv2.hconcat(targets[:2])
-        hor2 = cv2.hconcat(targets[2:])
-        concat_img = cv2.vconcat([hor1, hor2])
-
-        w, h = concat_img.shape[:2]
-        
-        color = (0, 0, 0)
-
-        concat_img = cv2.line(concat_img, (int(h/2), 0), (int(h/2), w), color, 2)
-        concat_img = cv2.line(concat_img, (0, int(w/2)), (h, int(w/2)), color, 2)
-
-        w_offset = 25
-        h_offset = 10
+    def show_target_images(self, all_matched_imgs, target_positions, target_guess):
+        target_display = cv2.hconcat(all_matched_imgs)
+        h, w = target_display.shape[:2]
+        print(f"w:{w}, h:{h}")
         font = cv2.FONT_HERSHEY_SIMPLEX
         line = cv2.LINE_AA
-        size = 0.75
+        size = 0.9
         stroke = 1
+        text_color = (255, 20, 20)
+        line_color = (127, 127, 127)
+        unused_coords_color = text_color
+        target_coords_color = (20, 20, 255)
 
-        cv2.putText(concat_img, 'Front View', (h_offset, w_offset), font, size, color, stroke, line)
-        cv2.putText(concat_img, 'Right View', (int(h/2) + h_offset, w_offset), font, size, color, stroke, line)
-        cv2.putText(concat_img, 'Back View', (h_offset, int(w/2) + w_offset), font, size, color, stroke, line)
-        cv2.putText(concat_img, 'Left View', (int(h/2) + h_offset, int(w/2) + w_offset), font, size, color, stroke, line)
+        cv2.putText(target_display, 'Front View', (0 + w // 16, h // 2 - 5), font, size, text_color, stroke, line)
+        if (target_positions[0] == target_guess).all():
+            coords_color = target_coords_color
+        else:
+            coords_color = unused_coords_color
+        cv2.putText(target_display, f'x: {target_positions[0,0]}, y: {target_positions[0,1]}', (0 + w // 16, h - 20), font, size, coords_color, stroke, line)
 
-        cv2.imshow(f'KeyboardPlayer:target_images', concat_img)
-        cv2.imwrite(os.path.join(self.filepath, f"target_image.png"), concat_img)
-        cv2.waitKey(1)
+        cv2.putText(target_display, 'Right View', (w // 4 + w // 16, h // 2 - 5), font, size, text_color, stroke, line)
+        if (target_positions[1] == target_guess).all():
+            coords_color = target_coords_color
+        else:
+            coords_color = unused_coords_color
+        cv2.putText(target_display, f'x: {target_positions[1,0]}, y: {target_positions[1,1]}', (w // 4 + w // 16, h - 20), font, size, coords_color, stroke, line)
+
+        cv2.putText(target_display, 'Back View', (w // 2 + w // 16, h // 2 - 5), font, size, text_color, stroke, line)
+        if (target_positions[2] == target_guess).all():
+            coords_color = target_coords_color
+        else:
+            coords_color = unused_coords_color
+        cv2.putText(target_display, f'x: {target_positions[2,0]}, y: {target_positions[2,1]}', (w // 2 + w // 16, h - 20), font, size, coords_color, stroke, line)
+
+        cv2.putText(target_display, 'Left View', (3 * w // 4 + w // 16, h // 2 - 5), font, size, text_color, stroke, line)
+        if (target_positions[3] == target_guess).all():
+            coords_color = target_coords_color
+        else:
+            coords_color = unused_coords_color
+        cv2.putText(target_display, f'x: {target_positions[3,0]}, y: {target_positions[3,1]}', (3*w // 4 + w // 16, h - 20), font, size, coords_color, stroke, line)
+
+        cv2.line(target_display, (w // 4, 0), (w // 4, h), line_color, 2)
+        cv2.line(target_display, (w // 2, 0), (w // 2, h), line_color, 2)
+        cv2.line(target_display, (3 * w // 4, 0), (3 * w // 4, h), line_color, 2)
+        cv2.line(target_display, (0, h // 2), (w, h // 2), line_color, 2)
+        cv2.imshow('Top: actual targets; Bottom: matched images', target_display)
 
 
     def set_target_images(self, images):
         super(KeyboardPlayerPyGame, self).set_target_images(images)
-        self.show_target_images()
 
         if images is None or len(images) <= 0:
             return
 
-        comparisons = []
+        all_matched_imgs = []
         target_positions = np.zeros((len(images), 2), dtype=np.int8)
         for i in range(4):
             match_filename, match_img, match_distance = self.vpr.query_by_image(images[i])
-            comparisons.append(cv2.vconcat([images[i], match_img]))
+            all_matched_imgs.append(cv2.vconcat([images[i], match_img]))
 
             goal_x, goal_y, _heading = self.decode_filename(match_filename)
             print(f"Target_{i} (x,y): {goal_x}, {goal_y}; confidence is {match_distance}")
@@ -369,9 +384,7 @@ class KeyboardPlayerPyGame(Player):
                 min_distance = distance
                 target_guess = target_positions[i]
         print(f"Choosing {target_positions[i]} as the target position.")
-        
-        cv2.imshow('top: actual target ; bottom: matched image', cv2.hconcat(comparisons))
-        # Todo show with labels. Front, "right", back, "left"
+        self.show_target_images(all_matched_imgs, target_positions, target_guess)
 
         start = (self.get_map_coord_x(0), self.get_map_coord_y(0))
         goal = (self.get_map_coord_y(target_guess[1]), self.get_map_coord_x(target_guess[0]))
@@ -414,14 +427,15 @@ class KeyboardPlayerPyGame(Player):
         if self.screen is None:
             self.screen = pygame.display.set_mode((4*w, 2*h))
 
-        # Save camera observations (exploration phase only)
-        # These can be used for SfM, SLAM, and visual place recognition
         step = 0
         phase = None
         state = self.get_state()
         if state is not None:
           step = state[2]
           phase = state[1]
+
+        # Save camera observations (exploration phase only)
+        # These can be used for SfM, SLAM, and visual place recognition
         if phase == Phase.EXPLORATION and step % 5 == 1:
             cv2.imwrite(os.path.join(self.filepath, f"{step}_{round(self.x)}_{round(self.y)}_{self.heading}_.png"), fpv)
 
