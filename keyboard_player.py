@@ -119,6 +119,11 @@ class KeyboardPlayerPyGame(Player):
         return self.MAP_WIDTH // 2 - round(raw_coord_y)
 
 
+    def add_obstacles(self, y_start, y_end, x_start, x_end):
+        slice_to_update = self.occupancy_grid[y_start:y_end, x_start:x_end]
+        mask = (slice_to_update != OccupancyMap.VISITED)
+        self.occupancy_grid[y_start:y_end, x_start:x_end][mask] = OccupancyMap.OBSTACLE
+
     def act(self):
         grid_coord_x = self.get_map_coord_x(self.x)
         grid_coord_y = self.get_map_coord_y(self.y)
@@ -140,19 +145,20 @@ class KeyboardPlayerPyGame(Player):
         else:
             next_action = self.manual_action()
         
+
         wall_ahead = (phase == Phase.EXPLORATION) and self.check_for_collision_ahead()
         if wall_ahead:
             # Draw the wall markers on the minimap
             # TODO: Sometimes these are too wide, e.g. when coming at parallel at a wall, 
             #       or when the wall is off to the side. We might want to make this more accurate.
             if self.heading == self.HEADING_NORTH:
-                self.occupancy_grid[grid_coord_y - 8:grid_coord_y - 5, grid_coord_x-6:grid_coord_x+6] = OccupancyMap.OBSTACLE
+                self.add_obstacles(grid_coord_y - 8, grid_coord_y - 5, grid_coord_x - 6, grid_coord_x + 6)
             elif self.heading == self.HEADING_EAST:
-                self.occupancy_grid[grid_coord_y-6:grid_coord_y+6, grid_coord_x + 5:grid_coord_x + 8] = OccupancyMap.OBSTACLE
+                self.add_obstacles(grid_coord_y - 6, grid_coord_y + 6, grid_coord_x + 5, grid_coord_x + 8)
             elif self.heading == self.HEADING_SOUTH:
-                self.occupancy_grid[grid_coord_y + 5:grid_coord_y + 8, grid_coord_x-6:grid_coord_x+6] = OccupancyMap.OBSTACLE
+                self.add_obstacles(grid_coord_y + 5, grid_coord_y + 8, grid_coord_x - 6, grid_coord_x + 6)
             elif self.heading == self.HEADING_WEST:
-                self.occupancy_grid[grid_coord_y-6:grid_coord_y+6, grid_coord_x - 8:grid_coord_x - 5] = OccupancyMap.OBSTACLE
+                self.add_obstacles(grid_coord_y - 6, grid_coord_y + 6, grid_coord_x - 8, grid_coord_x - 5)
 
         if next_action == Action.FORWARD:
             if wall_ahead:
@@ -170,7 +176,7 @@ class KeyboardPlayerPyGame(Player):
         elif next_action == Action.RIGHT:
             self.heading = (self.heading + 1) % 147
 
-        self.occupancy_grid[grid_coord_y-1:grid_coord_y, grid_coord_x-1:grid_coord_x] = OccupancyMap.VISITED
+        self.occupancy_grid[grid_coord_y-1:grid_coord_y+1, grid_coord_x-1:grid_coord_x+1] = OccupancyMap.VISITED
 
         return next_action
 
@@ -378,7 +384,7 @@ class KeyboardPlayerPyGame(Player):
                 self.path_overlay[y, x] = 1
             self.nav_point = self.path.pop(0)
         else:
-            print("Could not find a path between f{start} and f{goal}")
+            print(f"Could not find a path between #{start} and #{goal}")
     
 
     def convert_occupancy_to_cvimg(self):
