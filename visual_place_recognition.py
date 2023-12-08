@@ -1,7 +1,30 @@
 import numpy as np
 import cv2
 import os
-from sklearn.cluster import KMeans
+#from sklearn.cluster import KMeans
+import faiss
+from time import sleep, strftime, time
+
+class FaissKMeans:
+    def __init__(self, n_clusters=8, n_init=10, max_iter=300):
+        self.n_clusters = n_clusters
+        self.n_init = n_init
+        self.max_iter = max_iter
+        self.kmeans = None
+        self.cluster_centers_ = None
+        self.inertia_ = None
+
+    def fit(self, X):
+        self.kmeans = faiss.Kmeans(d=X.shape[1],
+                                   k=self.n_clusters,
+                                   niter=self.max_iter,
+                                   nredo=self.n_init)
+        self.kmeans.train(X).astype(np.float32)
+        self.cluster_centers_ = self.kmeans.centroids
+        self.inertia_ = self.kmeans.obj[-1]
+
+    def predict(self, X):
+        return self.kmeans.index.search(X.astype(np.float32), 1)[1]
 
 class BovwPlaceRecognition:
     def __init__(self):
@@ -13,10 +36,14 @@ class BovwPlaceRecognition:
 
 
     def build_database(self, image_folder):
+        print('5: ',time())
         self.images = self._load_images_from_folder(image_folder)
+        print('6: ',time())
 
         descriptor_list, image_to_descriptors = self._compute_sift_features(self.images)
+        print('7: ',time())
         self.visual_words = self._build_visual_words(descriptor_list)
+        print('8: ',time())
 
         for key, desc in image_to_descriptors.items():
             hist = self._calculate_histogram(desc, self.visual_words)
@@ -36,6 +63,7 @@ class BovwPlaceRecognition:
         images = {}
         for image_name in os.listdir(folder):
             image_path = os.path.join(folder, image_name)
+            #images.append(cv2.imread(image_path))
             images[image_name] = cv2.imread(image_path)
         return images
 
@@ -49,11 +77,12 @@ class BovwPlaceRecognition:
             if des is not None:
                 descriptor_list.extend(des)
                 image_to_descriptors[key] = des
-        return descriptor_list, image_to_descriptors
+        descriptor_array = np.array(descriptor_list, dtype=np.float32)
+        return descriptor_array, image_to_descriptors
 
 
     def _build_visual_words(self, descriptor_list):
-        kmeans = KMeans(n_clusters=self.num_clusters, verbose=1)
+        kmeans = FaissKMeans(n_clusters=self.num_clusters)
         kmeans.fit(descriptor_list)
         visual_words = kmeans.cluster_centers_
         return visual_words
