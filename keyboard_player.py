@@ -191,7 +191,7 @@ class KeyboardPlayerPyGame(Player):
 
     def follow_path(self, grid_coord_x, grid_coord_y):
         """ 
-            Automatically follow the path to the target as return by A* or other algorithm.
+            Automatically follow the path to the target as returned by A* or other algorithm.
         """
         # If the current nav point has been reached, get the next one
         if self.nav_point == (grid_coord_y, grid_coord_x):
