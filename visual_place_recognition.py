@@ -1,7 +1,6 @@
 import numpy as np
 import cv2
 import os
-#from sklearn.cluster import KMeans
 import faiss
 from time import sleep, strftime, time
 
@@ -18,7 +17,8 @@ class FaissKMeans:
         self.kmeans = faiss.Kmeans(d=X.shape[1],
                                    k=self.n_clusters,
                                    niter=self.max_iter,
-                                   nredo=self.n_init)
+                                   nredo=self.n_init,
+                                   gpu=False)
         self.kmeans.train(X).astype(np.float32)
         self.cluster_centers_ = self.kmeans.centroids
         self.inertia_ = self.kmeans.obj[-1]
@@ -36,14 +36,23 @@ class BovwPlaceRecognition:
 
 
     def build_database(self, image_folder):
-        print('5: ',time())
+        start_t = time()
+        print("Starting _load_images_from_folder")
         self.images = self._load_images_from_folder(image_folder)
-        print('6: ',time())
+        end_t = time()
+        print(f"Finished _load_images_from_folder in {end_t - start_t} seconds")
 
+        start_t = time()
+        print("Starting _compute_sift_features")
         descriptor_list, image_to_descriptors = self._compute_sift_features(self.images)
-        print('7: ',time())
+        end_t = time()
+        print(f"Finished _compute_sift_features in {end_t - start_t} seconds")
+
+        start_t = time()
+        print("Starting _build_visual_words")
         self.visual_words = self._build_visual_words(descriptor_list)
-        print('8: ',time())
+        end_t = time()
+        print(f"Finished _build_visual_words in {end_t - start_t} seconds")
 
         for key, desc in image_to_descriptors.items():
             hist = self._calculate_histogram(desc, self.visual_words)
@@ -63,7 +72,6 @@ class BovwPlaceRecognition:
         images = {}
         for image_name in os.listdir(folder):
             image_path = os.path.join(folder, image_name)
-            #images.append(cv2.imread(image_path))
             images[image_name] = cv2.imread(image_path)
         return images
 
