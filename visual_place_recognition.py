@@ -18,7 +18,7 @@ class FaissKMeans:
                                    k=self.n_clusters,
                                    niter=self.max_iter,
                                    nredo=self.n_init,
-                                   gpu=False)
+                                   gpu=True)
         self.kmeans.train(X).astype(np.float32)
         self.cluster_centers_ = self.kmeans.centroids
         self.inertia_ = self.kmeans.obj[-1]
@@ -73,6 +73,7 @@ class BovwPlaceRecognition:
         for image_name in os.listdir(folder):
             image_path = os.path.join(folder, image_name)
             images[image_name] = cv2.imread(image_path)
+        print(f"Loaded {len(images)} images")
         return images
 
 
