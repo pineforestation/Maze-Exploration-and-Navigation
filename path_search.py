@@ -2,9 +2,10 @@ from enum import IntEnum
 from queue import PriorityQueue
 
 class OccupancyMap(IntEnum):
-    UNEXPLORED = 0
-    VISITED = 1
-    OBSTACLE = 2
+    UNKNOWN = 0
+    UNVISITED = 1
+    VISITED = 2
+    OBSTACLE = 3
 
 class Direction(IntEnum):
     NORTH = 0
@@ -25,13 +26,13 @@ class AStar:
     def get_neighbors(self, coordinate):
         i, j, _direction = coordinate
         neighbors = []
-        if i > 0 and self.occupancy_grid[i - 1, j] == OccupancyMap.VISITED:
+        if i > 0 and self.occupancy_grid[i - 1, j] == OccupancyMap.UNVISITED:
             neighbors.append((i - 1, j, Direction.NORTH))
-        if j > 0 and self.occupancy_grid[i, j - 1] == OccupancyMap.VISITED:
+        if j > 0 and self.occupancy_grid[i, j - 1] == OccupancyMap.UNVISITED:
             neighbors.append((i, j - 1, Direction.WEST))
-        if i < self.height - 1 and self.occupancy_grid[i + 1, j] == OccupancyMap.VISITED:
+        if i < self.height - 1 and self.occupancy_grid[i + 1, j] == OccupancyMap.UNVISITED:
             neighbors.append((i + 1, j, Direction.SOUTH))
-        if j < self.width - 1 and self.occupancy_grid[i, j + 1] == OccupancyMap.VISITED:
+        if j < self.width - 1 and self.occupancy_grid[i, j + 1] == OccupancyMap.UNVISITED:
             neighbors.append((i, j + 1, Direction.EAST))
         return neighbors
 

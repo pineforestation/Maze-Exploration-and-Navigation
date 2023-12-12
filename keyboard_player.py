@@ -119,10 +119,9 @@ class KeyboardPlayerPyGame(Player):
         return self.MAP_WIDTH // 2 - round(raw_coord_y)
 
 
-    def add_obstacles(self, y_start, y_end, x_start, x_end):
-        slice_to_update = self.occupancy_grid[y_start:y_end, x_start:x_end]
-        mask = (slice_to_update != OccupancyMap.VISITED)
-        self.occupancy_grid[y_start:y_end, x_start:x_end][mask] = OccupancyMap.OBSTACLE
+    def get_heading_in_radians(self):
+        return self.heading / 147 * 2 * math.pi
+
 
     def act(self):
         grid_coord_x = self.get_map_coord_x(self.x)
@@ -144,39 +143,17 @@ class KeyboardPlayerPyGame(Player):
             next_action = self.follow_path(grid_coord_x, grid_coord_y)
         else:
             next_action = self.manual_action()
-        
-
-        wall_ahead = (phase == Phase.EXPLORATION) and self.check_for_collision_ahead()
-        if wall_ahead:
-            # Draw the wall markers on the minimap
-            # TODO: Sometimes these are too wide, e.g. when coming at parallel at a wall, 
-            #       or when the wall is off to the side. We might want to make this more accurate.
-            if self.heading == self.HEADING_NORTH:
-                self.add_obstacles(grid_coord_y - 8, grid_coord_y - 5, grid_coord_x - 6, grid_coord_x + 6)
-            elif self.heading == self.HEADING_EAST:
-                self.add_obstacles(grid_coord_y - 6, grid_coord_y + 6, grid_coord_x + 5, grid_coord_x + 8)
-            elif self.heading == self.HEADING_SOUTH:
-                self.add_obstacles(grid_coord_y + 5, grid_coord_y + 8, grid_coord_x - 6, grid_coord_x + 6)
-            elif self.heading == self.HEADING_WEST:
-                self.add_obstacles(grid_coord_y - 6, grid_coord_y + 6, grid_coord_x - 8, grid_coord_x - 5)
 
         if next_action == Action.FORWARD:
-            if wall_ahead:
+            if self.check_for_collision_ahead(grid_coord_x, grid_coord_y):
                 next_action = Action.IDLE
             else:
-                converted_heading = self.heading / 147 * 2 * math.pi
-                # self.x += math.sin(converted_heading)
-                # self.y += math.cos(converted_heading)
-                if self.heading == self.HEADING_WEST:
-                    self.x -= 1
-                elif self.heading == self.HEADING_NORTH:
-                    self.y += 1
-                elif self.heading == self.HEADING_SOUTH:
-                    self.y -= 1
-                elif self.heading == self.HEADING_EAST:
-                    self.x += 1
+                converted_heading = self.get_heading_in_radians()
+                self.x += math.sin(converted_heading)
+                self.y += math.cos(converted_heading)
         elif next_action == Action.BACKWARD:
-            converted_heading = self.heading / 147 * 2 * math.pi
+            sleep(0.2)
+            converted_heading = self.get_heading_in_radians()
             self.x -= math.sin(converted_heading)
             self.y -= math.cos(converted_heading)
         elif next_action == Action.LEFT:
@@ -263,21 +240,20 @@ class KeyboardPlayerPyGame(Player):
         return next_action
 
 
-    def check_for_collision_ahead(self):
-        """
-            Check if there is floor visible at the bottom of the first-person view.
-            If not, we are about to hit a wall, so prevent moving forward.
-        """
-        fpv = self.fpv
-        w = fpv.shape[1]
-        width_to_check = 40
-
-        white_floor = [239, 239, 239]
-        blue_floor = [224, 186, 162]
-
-        bottom_row = fpv[-1, (w // 2 - width_to_check):(w // 2 + width_to_check), :]
-
-        return not ((bottom_row == white_floor) | (bottom_row == blue_floor)).all()
+    def check_for_collision_ahead(self, grid_coord_x, grid_coord_y):
+        if self.heading == self.HEADING_NORTH:
+            if self.occupancy_grid[grid_coord_y-1, grid_coord_x] == OccupancyMap.OBSTACLE:
+                return True
+        elif self.heading == self.HEADING_EAST:
+            if self.occupancy_grid[grid_coord_y, grid_coord_x+1] == OccupancyMap.OBSTACLE:
+                return True
+        elif self.heading == self.HEADING_SOUTH:
+            if self.occupancy_grid[grid_coord_y+1, grid_coord_x] == OccupancyMap.OBSTACLE:
+                return True
+        elif self.heading == self.HEADING_WEST:
+            if self.occupancy_grid[grid_coord_y, grid_coord_x-1] == OccupancyMap.OBSTACLE:
+                return True
+        return False
 
 
     def perform_custom_action(self, action):
@@ -397,6 +373,10 @@ class KeyboardPlayerPyGame(Player):
         start = (self.get_map_coord_x(0), self.get_map_coord_y(0))
         goal = (self.get_map_coord_y(target_guess[1]), self.get_map_coord_x(target_guess[0]))
 
+        # Clean up occupancy_grid: AStar will look at "unvisited" cells.
+        # Todo: might also want to do some image processing to de-noise, straighten and thicken the walls
+        self.occupancy_grid[self.occupancy_grid == OccupancyMap.VISITED] = OccupancyMap.UNVISITED
+
         self.path = AStar(start, goal, self.occupancy_grid).perform_search()
         if len(self.path) > 0:
             shape = self.occupancy_grid.shape
@@ -412,6 +392,8 @@ class KeyboardPlayerPyGame(Player):
         shape = self.occupancy_grid.shape
         height, width = shape
         image = np.zeros((height, width, 3), dtype=np.uint8)
+        image[self.occupancy_grid == OccupancyMap.UNKNOWN] = [30, 30, 30]
+        image[self.occupancy_grid == OccupancyMap.UNVISITED] = [255, 255, 255]
         image[self.occupancy_grid == OccupancyMap.VISITED] = [255, 0, 0]
         image[self.occupancy_grid == OccupancyMap.OBSTACLE] = [0, 255, 0]
         image[self.path_overlay == 1] = [0, 0, 255]
@@ -425,8 +407,55 @@ class KeyboardPlayerPyGame(Player):
         heading = int(info[3])
         return x, y, heading
 
+
+    def detect_walls(self, fpv):
+        converted_heading = self.get_heading_in_radians()
+        white_floor = [239, 239, 239]
+        blue_floor = [224, 186, 162]
+        R = np.array([[math.pi / 2], [0], [0]], dtype=np.float32)
+        t = np.array([[0, 7, 0]], dtype=np.float32)
+
+        fpv_copy = np.copy(fpv)
+
+        # Project points at evenly spaced interals in front of the robot
+        sensing_width = 5
+        depth = 10
+        for i in range(sensing_width):
+            points = np.zeros((2*depth, 3), dtype=np.float32)
+            for d in range(depth):
+                points[d] = [i-sensing_width/2, 6+d, 0]
+                points[d+depth] = [i-sensing_width/2+1, 6+d, 0]
+            pproj, _jacobian = cv2.projectPoints(points, R, t, self.get_camera_intrinsic_matrix(), None)
+
+            offset_x = (i - (sensing_width - 1)/2) * math.sin(converted_heading + math.pi/2)
+            offset_y = (i - (sensing_width - 1)/2) * math.cos(converted_heading + math.pi/2)
+
+            # print(f"x,y: {self.x:.2f}, {self.y:.2f} offset: {(self.x + offset_x):.2f}, {(self.y + offset_y):.2f}")
+
+            for d in range(depth):
+                x = self.x + offset_x + (d+3) * math.sin(converted_heading)
+                y = self.y + offset_y + (d+3) * math.cos(converted_heading)
+                grid_coord_x = self.get_map_coord_x(x)
+                grid_coord_y = self.get_map_coord_y(y)
+
+                p1 = pproj[d]
+                p2 = pproj[d+depth]
+                section_to_check = fpv_copy[round(p1[0, 1]), round(p1[0, 0]):round(p2[0, 0]), :]
+
+                # Check if the image section at a given distance is floor tiles
+                if ((section_to_check == white_floor) | (section_to_check == blue_floor)).all():
+                    if self.occupancy_grid[grid_coord_y, grid_coord_x] == OccupancyMap.UNKNOWN:
+                        self.occupancy_grid[grid_coord_y, grid_coord_x] = OccupancyMap.UNVISITED
+                    # Draw "range sensing" lines
+                    fpv[round(p1[0, 1]), round(p1[0, 0]):round(p2[0, 0]), :] = [255, 0, 0]
+                else:
+                    self.occupancy_grid[grid_coord_y, grid_coord_x] = OccupancyMap.OBSTACLE
+                    fpv[round(p1[0, 1]), round(p1[0, 0]):round(p2[0, 0]), :] = [0, 0, 255]
+                    break
+
+
     def see(self, fpv):
-        if fpv is None or len(fpv.shape) < 3:
+        if fpv is None or len(fpv.shape) < 3 or self.get_camera_intrinsic_matrix() is None:
             return
 
         self.fpv = fpv
@@ -439,17 +468,21 @@ class KeyboardPlayerPyGame(Player):
         phase = None
         state = self.get_state()
         if state is not None:
-          step = state[2]
-          phase = state[1]
+            step = state[2]
+            phase = state[1]
 
         # Save camera observations (exploration phase only)
         # These can be used for SfM, SLAM, and visual place recognition
         if phase == Phase.EXPLORATION and step % 5 == 1:
             cv2.imwrite(os.path.join(self.filepath, f"{step}_{round(self.x)}_{round(self.y)}_{self.heading}_.png"), fpv)
 
+        # Use the camera view to detect walls and update the exploration grid and minimap,
+        # and also draw the rangefinder on the first person view
+        self.detect_walls(fpv)
+
         # Draw the heads up display (HUD) and the mini-map
         if phase == Phase.EXPLORATION:
-            hud_img = np.zeros(shape=(h,w,3), dtype=np.uint8)
+            hud_img = np.zeros(shape=(60,w,3), dtype=np.uint8)
             w_offset = 10
             h_offset = 20
             font = cv2.FONT_HERSHEY_SIMPLEX
@@ -476,7 +509,7 @@ class KeyboardPlayerPyGame(Player):
         fpv_pygame = convert_opencv_img_to_pygame(cv2.resize(fpv, (2*w, 2*h)), True)
         minimap_pygame = convert_opencv_img_to_pygame(cv2.resize(minimap, (2*w, 2*h)))
         self.screen.blit(fpv_pygame, (0, 0))
-        self.screen.blit(minimap_pygame, (2*w, 50))
+        self.screen.blit(minimap_pygame, (2*w, 60))
         if phase == Phase.EXPLORATION:
             hud_pygame = convert_opencv_img_to_pygame(hud_img, True)
             self.screen.blit(hud_pygame, (2*w, 0))
