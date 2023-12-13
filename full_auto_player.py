@@ -39,7 +39,7 @@ class FullAutoPlayer(BasePlayer):
                 self.post_exploration_processing()
             else:
                 start = (self.get_map_coord_y(self.y), self.get_map_coord_x(self.x))
-                self.goal = (random.randint(0, self.MAP_WIDTH), random.randint(0, self.MAP_WIDTH))
+                self.goal = (random.randint(0, self.MAP_WIDTH), random.randint(0, self.MAP_WIDTH)) #TODO check that this is unexplored
                 self.path = AStar(start, self.goal, self.occupancy_grid, allow_unknown=True).perform_search()
                 if len(self.path) > 0:
                     self.control_state = ControlState.FOLLOW_EXPLORATION_PATH
@@ -52,11 +52,11 @@ class FullAutoPlayer(BasePlayer):
         elif self.control_state == ControlState.FOLLOW_EXPLORATION_PATH:
             if self.nav_point is None:
                 self.control_state = ControlState.FIND_PATH_TO_EXPLORE
-            elif self.steps_since_last_scan > 10:
+            elif self.steps_since_last_scan > 10: # TODO don't rescan same location
                 self.steps_since_last_scan = 0
                 self.action_queue = [Action.IDLE] + [Action.LEFT] * 147
             else:
-                next_action, goal_reached = self.follow_path()
+                next_action, goal_reached = self.follow_path(strict_collision_checking=True)
                 if next_action == Action.FORWARD:
                     self.steps_since_last_scan += 1
 
@@ -65,11 +65,16 @@ class FullAutoPlayer(BasePlayer):
             self.control_state = ControlState.FOLLOW_NAVIGATION_PATH
 
         elif self.control_state == ControlState.FOLLOW_NAVIGATION_PATH:
-            next_action, goal_reached = self.follow_path()
-            if goal_reached:
-                next_action = Action.CHECKIN
-                end_time = self.get_state()[3]
-                print(f"reached goal in {(end_time - self.set_target_img_timestamp):.2f} seconds")
+            if self.nav_point is not None:
+                next_action, goal_reached = self.follow_path(strict_collision_checking=False)
+                if goal_reached:
+                    next_action = Action.CHECKIN
+                    end_time = self.get_state()[3]
+                    print(f"reached goal in {(end_time - self.set_target_img_timestamp):.2f} seconds")
+            else:
+                # TODO try to rescue this, or checkin if the target location is close enough
+                print("I can't reach the goal ")
+                next_action = Action.QUIT
         return next_action
 
 

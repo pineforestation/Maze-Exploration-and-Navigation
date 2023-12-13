@@ -139,7 +139,7 @@ class BasePlayer(Player):
         return next_action
 
 
-    def follow_path(self):
+    def follow_path(self, strict_collision_checking=False):
         """ 
             Automatically follow the path to the target as returned by A* or other algorithm.
         """
@@ -188,7 +188,10 @@ class BasePlayer(Player):
                 next_action = Action.LEFT
 
         if next_action == Action.FORWARD:
-            if self.check_for_collision_ahead(grid_coord_x, grid_coord_y):
+            margin = 0
+            if strict_collision_checking:
+                margin = 1
+            if self.check_for_collision_ahead(grid_coord_x, grid_coord_y, margin):
                 print("Impossible to keep going along current path; encountered an obstacle")
                 next_action = Action.BACKWARD
                 self.nav_point = None
@@ -196,18 +199,18 @@ class BasePlayer(Player):
         return next_action, goal_reached
 
 
-    def check_for_collision_ahead(self, grid_coord_x, grid_coord_y):
+    def check_for_collision_ahead(self, grid_coord_x, grid_coord_y, margin=0):
         if self.heading == self.HEADING_NORTH:
-            if self.occupancy_grid[grid_coord_y-1, grid_coord_x] == OccupancyMap.OBSTACLE:
+            if (self.occupancy_grid[grid_coord_y-1-margin:grid_coord_y, grid_coord_x-margin:grid_coord_x+margin+1] == OccupancyMap.OBSTACLE).any():
                 return True
         elif self.heading == self.HEADING_EAST:
-            if self.occupancy_grid[grid_coord_y, grid_coord_x+1] == OccupancyMap.OBSTACLE:
+            if (self.occupancy_grid[grid_coord_y-margin:grid_coord_y+margin+1, grid_coord_x+1:grid_coord_x+2+margin] == OccupancyMap.OBSTACLE).any():
                 return True
         elif self.heading == self.HEADING_SOUTH:
-            if self.occupancy_grid[grid_coord_y+1, grid_coord_x] == OccupancyMap.OBSTACLE:
+            if (self.occupancy_grid[grid_coord_y+1:grid_coord_y+2+margin, grid_coord_x-margin:grid_coord_x+margin+1] == OccupancyMap.OBSTACLE).any():
                 return True
         elif self.heading == self.HEADING_WEST:
-            if self.occupancy_grid[grid_coord_y, grid_coord_x-1] == OccupancyMap.OBSTACLE:
+            if (self.occupancy_grid[grid_coord_y-margin:grid_coord_y+margin+1, grid_coord_x-1-margin:grid_coord_x] == OccupancyMap.OBSTACLE).any():
                 return True
         return False
 
@@ -356,11 +359,11 @@ class BasePlayer(Player):
         img = cv2.morphologyEx(img, cv2.MORPH_ERODE, kernel)
         img = cv2.morphologyEx(img, cv2.MORPH_DILATE, kernel)
         img = cv2.morphologyEx(img, cv2.MORPH_DILATE, kernel)
+        img[:-1, :-1] = img[1:, 1:] # With an even-sized kernel, morphologyEx shifts the image, so we have to shift it back
         img = cv2.morphologyEx(img, cv2.MORPH_DILATE, kernel)
-        shifted = np.zeros_like(img)
-        shifted[:-1, :-1] = img[1:, 1:]
+        img = cv2.morphologyEx(img, cv2.MORPH_ERODE, kernel)
         print()
-        self.occupancy_grid[shifted == 255] = OccupancyMap.OBSTACLE
+        self.occupancy_grid[img == 255] = OccupancyMap.OBSTACLE
 
 
     def decode_filename(self, filename):
