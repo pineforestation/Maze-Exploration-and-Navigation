@@ -1,15 +1,8 @@
-from vis_nav_game import Player, Action, Phase
 from enum import Enum
 import pygame
-import numpy as np
-import cv2
-import math
-from time import sleep, strftime
-import os
 
+from vis_nav_game import Action, Phase
 from base_player import BasePlayer
-from path_search import OccupancyMap, AStar
-from visual_place_recognition import BovwPlaceRecognition
 
 
 class CustomAction(Enum):
