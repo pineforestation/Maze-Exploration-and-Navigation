@@ -409,9 +409,11 @@ class KeyboardPlayerPyGame(Player):
         image = np.zeros((height, width, 3), dtype=np.uint8)
         image[self.occupancy_grid == OccupancyMap.UNKNOWN] = [30, 30, 30]
         image[self.occupancy_grid == OccupancyMap.UNVISITED] = [255, 255, 255]
-        image[self.occupancy_grid == OccupancyMap.VISITED] = [255, 0, 0]
         image[self.occupancy_grid == OccupancyMap.OBSTACLE] = [0, 255, 0]
-        image[self.path_overlay == 1] = [0, 0, 255]
+        if self.get_state() is not None and self.get_state()[1] == Phase.EXPLORATION:
+            image[self.occupancy_grid == OccupancyMap.VISITED] = [255, 0, 0]
+        else:
+            image[self.path_overlay == 1] = [255, 0, 0]
         return image
 
 
@@ -543,7 +545,7 @@ class KeyboardPlayerPyGame(Player):
         minimap = self.convert_occupancy_to_cvimg()
         marker_size = 10
         marker_img = np.zeros(shape=(marker_size, marker_size, 3), dtype=np.uint8)
-        cv2.drawMarker(marker_img, (marker_size // 2, marker_size // 2), [0, 255, 0], cv2.MARKER_TRIANGLE_UP, marker_size)
+        cv2.drawMarker(marker_img, (marker_size // 2, marker_size // 2), [10, 10, 0], cv2.MARKER_TRIANGLE_UP, marker_size)
         rotation_matrix = cv2.getRotationMatrix2D((marker_img.shape[1] // 2, marker_img.shape[0] // 2), (self.heading / 147 * -360), 1)
         rotated_marker = cv2.warpAffine(marker_img, rotation_matrix, (marker_img.shape[1], marker_img.shape[0]))
         x = self.get_map_coord_x(self.x) - marker_size // 2
