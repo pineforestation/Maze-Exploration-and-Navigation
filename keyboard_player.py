@@ -387,6 +387,9 @@ class KeyboardPlayerPyGame(Player):
         start = (self.get_map_coord_y(0), self.get_map_coord_x(0))
         self.goal = (self.get_map_coord_y(target_guess[1]), self.get_map_coord_x(target_guess[0]))
 
+        # Ensure that the goal didn't get marked as a wall by the map thickening step
+        self.occupancy_grid[self.goal] = OccupancyMap.VISITED
+
         self.path = AStar(start, self.goal, self.occupancy_grid).perform_search()
         if len(self.path) > 0:
             shape = self.occupancy_grid.shape
