@@ -7,7 +7,7 @@ import math
 from time import sleep, strftime
 import os
 
-from base_player import BasePlayer, convert_opencv_img_to_pygame
+from base_player import BasePlayer
 from path_search import OccupancyMap, AStar
 from visual_place_recognition import BovwPlaceRecognition
 
@@ -21,7 +21,8 @@ class CustomAction(Enum):
 
 class ManualExplorationPlayer(BasePlayer):
     """
-    Control manually using the keyboard.
+    Control manually using the keyboard during the exploration phase,
+    then automatically navigate to the target.
     """
 
     def __init__(self):
@@ -53,7 +54,11 @@ class ManualExplorationPlayer(BasePlayer):
           phase = state[1]
 
         if phase == Phase.NAVIGATION and self.nav_point is not None:
-            next_action = self.follow_path(grid_coord_x, grid_coord_y)
+            next_action, goal_reached = self.follow_path(grid_coord_x, grid_coord_y)
+            if goal_reached:
+                next_action = Action.CHECKIN
+                end_time = self.get_state()[3]
+                print(f"reached goal in {(end_time - self.set_target_img_timestamp):.2f} seconds")
         else:
             next_action = self.manual_action()
         return next_action
@@ -103,7 +108,6 @@ class ManualExplorationPlayer(BasePlayer):
         elif action == CustomAction.PROCESS_EXPLORATION_IMAGES:
             self.post_exploration_processing()
             self.action_queue = [Action.QUIT]
-            next_action = Action.IDLE
         else:
             raise NotImplementedError(f"Unknown custom action: {action}")
 

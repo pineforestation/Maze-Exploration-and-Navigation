@@ -26,7 +26,7 @@ def convert_opencv_img_to_pygame(opencv_image, bgr_to_rb = False):
 
 class BasePlayer(Player):
     """
-    Control manually using the keyboard.
+    Base class for the player that implements everything except for control.
     """
 
     MAP_WIDTH = 200
@@ -143,46 +143,53 @@ class BasePlayer(Player):
         """ 
             Automatically follow the path to the target as returned by A* or other algorithm.
         """
-        # If the current nav point has been reached, get the next one
+        next_action = Action.IDLE
+        goal_reached = False
         if self.nav_point == (grid_coord_y, grid_coord_x):
+            # If the current nav point has been reached, get the next one
             if len(self.path) == 0:
                 self.nav_point = None
-                end_time = self.get_state()[3]
-                print(f"reached goal in {(end_time - self.set_target_img_timestamp):.2f} seconds")
-                return Action.CHECKIN
+                goal_reached = True
+                return next_action, goal_reached
             else:
                 self.nav_point = self.path.pop(0)
 
         nav_y, nav_x = self.nav_point
         if nav_y < grid_coord_y:
             if self.heading == self.HEADING_NORTH:
-                return Action.FORWARD
+                next_action = Action.FORWARD
             elif self.heading <= self.HEADING_SOUTH:
-                return Action.LEFT
+                next_action = Action.LEFT
             else:
-                return Action.RIGHT
+                next_action = Action.RIGHT
         elif nav_y > grid_coord_y:
             if self.heading == self.HEADING_SOUTH:
-                return Action.FORWARD
+                next_action = Action.FORWARD
             elif self.heading < self.HEADING_SOUTH:
-                return Action.RIGHT
+                next_action = Action.RIGHT
             else:
-                return Action.LEFT
+                next_action = Action.LEFT
         elif nav_x > grid_coord_x:
             if self.heading == self.HEADING_EAST:
-                return Action.FORWARD
+                next_action = Action.FORWARD
             elif self.heading < self.HEADING_EAST or self.heading > self.HEADING_WEST:
-                return Action.RIGHT
+                next_action = Action.RIGHT
             else:
-                return Action.LEFT
+                next_action = Action.LEFT
         elif nav_x < grid_coord_x:
             if self.heading == self.HEADING_WEST:
-                return Action.FORWARD
+                next_action = Action.FORWARD
             elif self.heading < self.HEADING_WEST and self.heading > self.HEADING_EAST:
-                return Action.RIGHT
+                next_action = Action.RIGHT
             else:
-                return Action.LEFT
-        return Action.IDLE
+                next_action = Action.LEFT
+
+        if next_action == Action.FORWARD:
+            if self.check_for_collision_ahead(grid_coord_x, grid_coord_y):
+                print("Impossible to keep going along current path; encountered an obstacle")
+                self.nav_point = None
+
+        return next_action, goal_reached
 
 
     def check_for_collision_ahead(self, grid_coord_x, grid_coord_y):
@@ -380,8 +387,6 @@ class BasePlayer(Player):
 
             offset_x = (i - (sensing_width - 1)/2) * math.sin(converted_heading + math.pi/2)
             offset_y = (i - (sensing_width - 1)/2) * math.cos(converted_heading + math.pi/2)
-
-            # print(f"x,y: {self.x:.2f}, {self.y:.2f} offset: {(self.x + offset_x):.2f}, {(self.y + offset_y):.2f}")
 
             for d in range(depth):
                 x = self.x + offset_x + (d+3) * math.sin(converted_heading)
