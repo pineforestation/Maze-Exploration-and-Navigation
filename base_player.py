@@ -45,16 +45,16 @@ class BasePlayer(Player):
         self.y = 0
         self.heading = 0
 
-        self.vpr = None
+        self.action_queue = []
 
         self.occupancy_grid = np.zeros(shape=(self.MAP_WIDTH, self.MAP_WIDTH), dtype=np.uint8)
+        self.vpr = None
         self.path = []
         self.goal = None
         self.nav_point = None
         self.path_overlay = None
 
         self.set_target_img_timestamp = None
-        self.quit_on_next = False
 
         super(BasePlayer, self).__init__()
 
@@ -71,12 +71,14 @@ class BasePlayer(Player):
         self.x = 0
         self.y = 0
         self.heading = 0
+        self.action_queue = []
 
 
     def pre_navigation(self):
         self.x = 0
         self.y = 0
         self.heading = 0
+        self.action_queue = []
 
 
     def get_map_coord_x(self, raw_coord_x):
@@ -96,10 +98,6 @@ class BasePlayer(Player):
 
 
     def act(self):
-        if self.quit_on_next:
-            self.quit_on_next = False
-            return Action.QUIT
-
         grid_coord_x = self.get_map_coord_x(self.x)
         grid_coord_y = self.get_map_coord_y(self.y)
 
@@ -113,7 +111,10 @@ class BasePlayer(Player):
         if step < 40:
             return Action.IDLE
         
-        next_action = self.get_next_action()
+        if self.action_queue:
+            next_action = self.action_queue.pop()
+        else:
+            next_action = self.get_next_action()
 
         if next_action == Action.FORWARD:
             if self.check_for_collision_ahead(grid_coord_x, grid_coord_y):
@@ -472,8 +473,3 @@ class BasePlayer(Player):
             hud_pygame = convert_opencv_img_to_pygame(hud_img, True)
             self.screen.blit(hud_pygame, (2*w, 0))
         pygame.display.update()
-
-
-if __name__ == "__main__":
-    import vis_nav_game
-    vis_nav_game.play(the_player=BasePlayer())

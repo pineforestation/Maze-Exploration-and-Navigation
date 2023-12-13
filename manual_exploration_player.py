@@ -27,7 +27,7 @@ class ManualExplorationPlayer(BasePlayer):
     def __init__(self):
         super(ManualExplorationPlayer, self).__init__()
         self.keymap = None
-        self.action_queue = []
+
 
     def reset(self):
         super(ManualExplorationPlayer, self).reset()
@@ -41,17 +41,6 @@ class ManualExplorationPlayer(BasePlayer):
             pygame.K_n: CustomAction.RESET_TRUE_NORTH,
             pygame.K_RETURN: CustomAction.PROCESS_EXPLORATION_IMAGES,
         }
-
-
-
-    def pre_exploration(self):
-        super(ManualExplorationPlayer, self).pre_exploration()
-        self.action_queue = []
-
-
-    def pre_navigation(self):
-        super(ManualExplorationPlayer, self).pre_navigation()
-        self.action_queue = []
 
 
     def get_next_action(self):
@@ -76,25 +65,23 @@ class ManualExplorationPlayer(BasePlayer):
         """
         next_action = Action.IDLE
 
-        if self.action_queue:
-            next_action = self.action_queue.pop()
-        else:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    return Action.QUIT
-                elif event.type == pygame.KEYDOWN and event.key in self.keymap:
-                    action = self.keymap[event.key]
-                    if isinstance(action, CustomAction):
-                        next_action = self.perform_custom_action(action)
-                    elif isinstance(action, Action):
-                        next_action = action
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                return Action.QUIT
+            elif event.type == pygame.KEYDOWN and event.key in self.keymap:
+                action = self.keymap[event.key]
+                if isinstance(action, CustomAction):
+                    next_action = self.perform_custom_action(action)
+                elif isinstance(action, Action):
+                    next_action = action
 
-            keys = pygame.key.get_pressed()
-            if keys[pygame.K_UP]:
-                next_action = Action.FORWARD
-            elif keys[pygame.K_DOWN]:
-                next_action = Action.BACKWARD
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_UP]:
+            next_action = Action.FORWARD
+        elif keys[pygame.K_DOWN]:
+            next_action = Action.BACKWARD
+
         return next_action
 
 
@@ -115,7 +102,7 @@ class ManualExplorationPlayer(BasePlayer):
             self.heading = 0
         elif action == CustomAction.PROCESS_EXPLORATION_IMAGES:
             self.post_exploration_processing()
-            self.quit_on_next = True
+            self.action_queue = [Action.QUIT]
             next_action = Action.IDLE
         else:
             raise NotImplementedError(f"Unknown custom action: {action}")
