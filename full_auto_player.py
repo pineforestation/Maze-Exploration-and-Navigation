@@ -2,7 +2,7 @@ from enum import Enum, auto
 import numpy as np
 import random
 from vis_nav_game import Action
-from path_search import AStar
+from path_search import AStar, OccupancyMap
 from base_player import BasePlayer
 
 
@@ -30,6 +30,7 @@ class FullAutoPlayer(BasePlayer):
         self.percent_to_explore = 75
         self.actual_map_area = (self.MAP_WIDTH // 2) ** 2
         self.good_checkpoints = [(self.get_map_coord_y(0), self.get_map_coord_x(0))]
+        self.scanned_positions = set()
 
 
     def get_next_action(self):
@@ -105,12 +106,36 @@ class FullAutoPlayer(BasePlayer):
             self.post_exploration_processing()
         else:
             start = (self.get_map_coord_y(self.y), self.get_map_coord_x(self.x))
-            if self.goal is None:
-                self.goal = (random.randint(0, self.MAP_WIDTH), random.randint(0, self.MAP_WIDTH)) # TODO check that this is unexplored
-                # self.goal = (self.get_map_coord_y(73), self.get_map_coord_x(35)) # TODO For testing
             # Use a thickened version of the map for pathfinding, in order to avoid bumping walls
             thick_occ_grid = self.thicken_occupancy_map(num_dilations=(2 - self.failed_path_count // 6))
-            self.path = AStar(start, self.goal, thick_occ_grid, allow_unknown=True).perform_search()
+
+            if self.goal is None:
+                # Find a good place to explore in an increasing radius from the current position
+                d = 5
+                path_found = False
+                while(not path_found):
+                    d += 1
+                    dist = d // 2 + self.failed_path_count
+                    x_min = max(0, start[0] - dist)
+                    x_max = min(self.MAP_WIDTH-1, start[0] + dist)
+                    y_min = max(0, start[1] - dist)
+                    y_max = min(self.MAP_WIDTH-1, start[1] + dist)
+                    self.goal = (random.randint(x_min, x_max), random.randint(y_min, y_max))
+                    print(f"x={x_min}:{x_max}, y=x={y_min}:{y_max}, got goal={self.goal}")
+                     # Check that this is unexplored and worth going to
+                    if self.occupancy_grid[self.goal] != OccupancyMap.UNKNOWN:
+                        print(f"Skippping {self.goal} since it isn't unkown; dist={dist}")
+                        continue
+                    # Don't try to go to places that are too closed to walls
+                    if (thick_occ_grid[self.goal[0]-1:self.goal[0]+2, self.goal[1]-1:self.goal[1]+2] == OccupancyMap.OBSTACLE).any():
+                        print(f"Skippping {self.goal} since it is too close to a wall; dist={dist}")
+                        continue
+                    self.path = AStar(start, self.goal, thick_occ_grid, allow_unknown=True).perform_search()
+                    path_found = (len(self.path) > 0)
+
+            else:
+                self.path = AStar(start, self.goal, thick_occ_grid, allow_unknown=True).perform_search()
+
             if len(self.path) > 0:
                 self.control_state = ControlState.FOLLOW_EXPLORATION_PATH
                 shape = self.occupancy_grid.shape
@@ -129,8 +154,11 @@ class FullAutoPlayer(BasePlayer):
             self.steps_since_last_scan = 0
             self.performed_scan = False
             self.refine_occupancy_map()
-        elif self.steps_since_last_scan > 10: # TODO don't rescan same location
-            self.action_queue = [Action.IDLE] + [Action.LEFT] * 147
+        elif self.steps_since_last_scan > 10:
+            if (self.x, self.y) not in self.scanned_positions:
+                # Don't rescan same location
+                self.action_queue = [Action.IDLE] + [Action.LEFT] * 147
+                self.scanned_positions.add((self.x, self.y))
             self.performed_scan = True
             print("Scanning.")
 
