@@ -24,18 +24,7 @@ def convert_opencv_img_to_pygame(opencv_image, bgr_to_rb = False):
     return pygame_image
 
 
-class CustomAction(Enum):
-    QUARTER_TURN_LEFT = 33
-    QUARTER_TURN_RIGHT = 34
-    MARK_NORTH_WALL = 35
-    MARK_WEST_WALL = 36
-    MARK_SOUTH_WALL = 37
-    MARK_EAST_WALL = 38
-    RESET_TRUE_NORTH = 39
-    PROCESS_EXPLORATION_IMAGES = 40
-
-
-class KeyboardPlayerPyGame(Player):
+class BasePlayer(Player):
     """
     Control manually using the keyboard.
     """
@@ -50,10 +39,7 @@ class KeyboardPlayerPyGame(Player):
     def __init__(self):
         self.fpv = None
         self.screen = None
-        self.keymap = None
-        self.other_keymap = None
         self.filepath = ''
-        self.action_queue = []
 
         self.x = 0
         self.y = 0
@@ -70,46 +56,27 @@ class KeyboardPlayerPyGame(Player):
         self.set_target_img_timestamp = None
         self.quit_on_next = False
 
-        super(KeyboardPlayerPyGame, self).__init__()
+        super(BasePlayer, self).__init__()
 
 
     def reset(self):
         self.fpv = None
         self.screen = None
-
-        pygame.init()
-
-        self.keymap = {
-            pygame.K_LEFT: CustomAction.QUARTER_TURN_LEFT,
-            pygame.K_RIGHT: CustomAction.QUARTER_TURN_RIGHT,
-            pygame.K_SPACE: Action.CHECKIN,
-            pygame.K_ESCAPE: Action.QUIT,
-            pygame.K_q: Action.LEFT,
-            pygame.K_e: Action.RIGHT,
-            pygame.K_w: CustomAction.MARK_NORTH_WALL,
-            pygame.K_a: CustomAction.MARK_WEST_WALL,
-            pygame.K_s: CustomAction.MARK_SOUTH_WALL,
-            pygame.K_d: CustomAction.MARK_EAST_WALL,
-            pygame.K_n: CustomAction.RESET_TRUE_NORTH,
-            pygame.K_RETURN: CustomAction.PROCESS_EXPLORATION_IMAGES,
-        }
-
         self.filepath = './data/exploration_views/' + strftime("%Y%m%d-%H%M%S")
         os.makedirs(self.filepath, exist_ok=True)
+        pygame.init()
 
 
     def pre_exploration(self):
         self.x = 0
         self.y = 0
         self.heading = 0
-        self.action_queue = []
 
 
     def pre_navigation(self):
         self.x = 0
         self.y = 0
         self.heading = 0
-        self.action_queue = []
 
 
     def get_map_coord_x(self, raw_coord_x):
@@ -124,6 +91,10 @@ class KeyboardPlayerPyGame(Player):
         return self.heading / 147 * 2 * math.pi
 
 
+    def get_next_action(self):
+        raise NotImplementedError()
+
+
     def act(self):
         if self.quit_on_next:
             self.quit_on_next = False
@@ -133,21 +104,16 @@ class KeyboardPlayerPyGame(Player):
         grid_coord_y = self.get_map_coord_y(self.y)
 
         step = 0
-        phase = None
         state = self.get_state()
         if state is not None:
           step = state[2]
-          phase = state[1]
         
         # At the start of the simulation, the robot takes a few seconds to settle into position.
         # Tracking gets messed up if you try to move before this is done.
         if step < 40:
             return Action.IDLE
         
-        if phase == Phase.NAVIGATION and self.nav_point is not None:
-            next_action = self.follow_path(grid_coord_x, grid_coord_y)
-        else:
-            next_action = self.manual_action()
+        next_action = self.get_next_action()
 
         if next_action == Action.FORWARD:
             if self.check_for_collision_ahead(grid_coord_x, grid_coord_y):
@@ -218,34 +184,6 @@ class KeyboardPlayerPyGame(Player):
         return Action.IDLE
 
 
-    def manual_action(self):
-        """
-            Let the player control using the keyboard.
-        """
-        next_action = Action.IDLE
-
-        if self.action_queue:
-            next_action = self.action_queue.pop()
-        else:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    return Action.QUIT
-                elif event.type == pygame.KEYDOWN and event.key in self.keymap:
-                    action = self.keymap[event.key]
-                    if isinstance(action, CustomAction):
-                        next_action = self.perform_custom_action(action)
-                    elif isinstance(action, Action):
-                        next_action = action
-
-            keys = pygame.key.get_pressed()
-            if keys[pygame.K_UP]:
-                next_action = Action.FORWARD
-            elif keys[pygame.K_DOWN]:
-                next_action = Action.BACKWARD
-        return next_action
-
-
     def check_for_collision_ahead(self, grid_coord_x, grid_coord_y):
         if self.heading == self.HEADING_NORTH:
             if self.occupancy_grid[grid_coord_y-1, grid_coord_x] == OccupancyMap.OBSTACLE:
@@ -260,39 +198,6 @@ class KeyboardPlayerPyGame(Player):
             if self.occupancy_grid[grid_coord_y, grid_coord_x-1] == OccupancyMap.OBSTACLE:
                 return True
         return False
-
-
-    def perform_custom_action(self, action):
-        next_action = Action.IDLE
-
-        if action == CustomAction.QUARTER_TURN_LEFT:
-            if self.heading == self.HEADING_EAST:
-                self.action_queue = [Action.IDLE] + [Action.LEFT] * 36
-            else:
-                self.action_queue = [Action.IDLE] + [Action.LEFT] * 37
-        elif action == CustomAction.QUARTER_TURN_RIGHT:
-            if self.heading == self.HEADING_NORTH:
-                self.action_queue = [Action.IDLE] + [Action.RIGHT] * 36
-            else:
-                self.action_queue = [Action.IDLE] + [Action.RIGHT] * 37
-        elif action == CustomAction.MARK_NORTH_WALL:
-            self.occupancy_grid[self.get_map_coord_y(self.y) - 1, :] = OccupancyMap.OBSTACLE
-        elif action == CustomAction.MARK_SOUTH_WALL:
-            self.occupancy_grid[self.get_map_coord_y(self.y) + 1, :] = OccupancyMap.OBSTACLE
-        elif action == CustomAction.MARK_WEST_WALL:
-            self.occupancy_grid[:, self.get_map_coord_x(self.x) - 1] = OccupancyMap.OBSTACLE
-        elif action == CustomAction.MARK_EAST_WALL:
-            self.occupancy_grid[:, self.get_map_coord_x(self.x) + 1] = OccupancyMap.OBSTACLE
-        elif action == CustomAction.RESET_TRUE_NORTH:
-            self.heading = 0
-        elif action == CustomAction.PROCESS_EXPLORATION_IMAGES:
-            self.post_exploration_processing()
-            self.quit_on_next = True
-            next_action = Action.IDLE
-        else:
-            raise NotImplementedError(f"Unknown custom action: {action}")
-
-        return next_action
 
    
     def post_exploration_processing(self):
@@ -358,7 +263,7 @@ class KeyboardPlayerPyGame(Player):
 
 
     def set_target_images(self, images):
-        super(KeyboardPlayerPyGame, self).set_target_images(images)
+        super(BasePlayer, self).set_target_images(images)
 
         if images is None or len(images) <= 0:
             return
@@ -571,4 +476,4 @@ class KeyboardPlayerPyGame(Player):
 
 if __name__ == "__main__":
     import vis_nav_game
-    vis_nav_game.play(the_player=KeyboardPlayerPyGame())
+    vis_nav_game.play(the_player=BasePlayer())
