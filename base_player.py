@@ -227,7 +227,7 @@ class BasePlayer(Player):
         print(f"Actual map bounds were x={min_col-self.MAP_WIDTH//2}:{max_col-self.MAP_WIDTH//2}, y={self.MAP_WIDTH//2-max_row}:{self.MAP_WIDTH//2-min_row}, for an area of {height}*{width}={actual_area}.")
         print(f"Explored {exploration_area} cells, which is {(exploration_area / actual_area):.1f}% of the actual area.")
 
-        self.thicken_occupancy_map()
+        self.occupancy_grid = self.thicken_occupancy_map()
         self.process_exploration_images()
 
 
@@ -361,7 +361,7 @@ class BasePlayer(Player):
         self.occupancy_grid[(refined_walls != 255) & (self.occupancy_grid == OccupancyMap.OBSTACLE)] = OccupancyMap.UNVISITED
 
 
-    def thicken_occupancy_map(self):
+    def thicken_occupancy_map(self, num_dilations=1):
         shape = self.occupancy_grid.shape
         height, width = shape
         img = np.zeros((height, width, 1), dtype=np.uint8)
@@ -370,11 +370,24 @@ class BasePlayer(Player):
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2,2))
         img = cv2.morphologyEx(img, cv2.MORPH_ERODE, kernel)
         img = cv2.morphologyEx(img, cv2.MORPH_DILATE, kernel)
-        img = cv2.morphologyEx(img, cv2.MORPH_DILATE, kernel)
-        img[:-1, :-1] = img[1:, 1:] # With an even-sized kernel, morphologyEx shifts the image, so we have to shift it back
+        for i in range(num_dilations):
+            img = cv2.morphologyEx(img, cv2.MORPH_DILATE, kernel)
+            img[:-1, :-1] = img[1:, 1:] # With an even-sized kernel, morphologyEx shifts the image, so we have to shift it back
         img = cv2.morphologyEx(img, cv2.MORPH_DILATE, kernel)
         img = cv2.morphologyEx(img, cv2.MORPH_ERODE, kernel)
-        print()
+        occ_grid_copy = np.copy(self.occupancy_grid)
+        occ_grid_copy[img == 255] = OccupancyMap.OBSTACLE
+        return occ_grid_copy
+
+
+    def erode_occupancy_map(self):
+        shape = self.occupancy_grid.shape
+        height, width = shape
+        img = np.zeros((height, width, 1), dtype=np.uint8)
+        img[self.occupancy_grid == OccupancyMap.OBSTACLE] = 255
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2,2))
+        img = cv2.morphologyEx(img, cv2.MORPH_ERODE, kernel)
         self.occupancy_grid[img == 255] = OccupancyMap.OBSTACLE
 
 

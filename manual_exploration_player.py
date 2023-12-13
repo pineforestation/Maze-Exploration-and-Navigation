@@ -103,6 +103,18 @@ class ManualExplorationPlayer(BasePlayer):
 
         return next_action
 
+
+    def see(self, fpv):
+        super(ManualExplorationPlayer, self).see(fpv)
+        state = self.get_state()
+        if state is not None and self.get_camera_intrinsic_matrix() is not None:
+            step = state[2]
+            # De-noise the detected walls
+            if step % 100 == 0:
+                print("Refining walls.")
+                self.refine_occupancy_map()
+
+
 if __name__ == "__main__":
     import vis_nav_game
     vis_nav_game.play(the_player=ManualExplorationPlayer())
