@@ -14,7 +14,7 @@ class Direction(IntEnum):
     WEST = 3
 
 class AStar:
-    def __init__(self, start, goal, occupancy_grid):
+    def __init__(self, start, goal, occupancy_grid, allow_unknown=False):
         self.occupancy_grid = occupancy_grid
         self.start = (*start, Direction.NORTH)
         self.goals = [(*goal, dir) for dir in Direction]
@@ -23,16 +23,21 @@ class AStar:
         self.height = height
         self.width = width
 
+        if allow_unknown:
+            self.prohibited_types = [OccupancyMap.OBSTACLE]
+        else:
+            self.prohibited_types = [OccupancyMap.OBSTACLE, OccupancyMap.UNKNOWN]
+
     def get_neighbors(self, coordinate):
         i, j, _direction = coordinate
         neighbors = []
-        if i > 0 and self.occupancy_grid[i - 1, j] not in [OccupancyMap.OBSTACLE, OccupancyMap.UNKNOWN]:
+        if i > 0 and self.occupancy_grid[i - 1, j] not in self.prohibited_types:
             neighbors.append((i - 1, j, Direction.NORTH))
-        if j > 0 and self.occupancy_grid[i, j - 1] not in [OccupancyMap.OBSTACLE, OccupancyMap.UNKNOWN]:
+        if j > 0 and self.occupancy_grid[i, j - 1] not in self.prohibited_types:
             neighbors.append((i, j - 1, Direction.WEST))
-        if i < self.height - 1 and self.occupancy_grid[i + 1, j] not in [OccupancyMap.OBSTACLE, OccupancyMap.UNKNOWN]:
+        if i < self.height - 1 and self.occupancy_grid[i + 1, j] not in self.prohibited_types:
             neighbors.append((i + 1, j, Direction.SOUTH))
-        if j < self.width - 1 and self.occupancy_grid[i, j + 1] not in [OccupancyMap.OBSTACLE, OccupancyMap.UNKNOWN]:
+        if j < self.width - 1 and self.occupancy_grid[i, j + 1] not in self.prohibited_types:
             neighbors.append((i, j + 1, Direction.EAST))
         return neighbors
 

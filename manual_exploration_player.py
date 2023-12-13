@@ -38,16 +38,13 @@ class ManualExplorationPlayer(BasePlayer):
 
 
     def get_next_action(self):
-        grid_coord_x = self.get_map_coord_x(self.x)
-        grid_coord_y = self.get_map_coord_y(self.y)
-
         phase = None
         state = self.get_state()
         if state is not None:
           phase = state[1]
 
         if phase == Phase.NAVIGATION and self.nav_point is not None:
-            next_action, goal_reached = self.follow_path(grid_coord_x, grid_coord_y)
+            next_action, goal_reached = self.follow_path()
             if goal_reached:
                 next_action = Action.CHECKIN
                 end_time = self.get_state()[3]

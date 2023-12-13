@@ -139,12 +139,15 @@ class BasePlayer(Player):
         return next_action
 
 
-    def follow_path(self, grid_coord_x, grid_coord_y):
+    def follow_path(self):
         """ 
             Automatically follow the path to the target as returned by A* or other algorithm.
         """
         next_action = Action.IDLE
         goal_reached = False
+        grid_coord_x = self.get_map_coord_x(self.x)
+        grid_coord_y = self.get_map_coord_y(self.y)
+
         if self.nav_point == (grid_coord_y, grid_coord_x):
             # If the current nav point has been reached, get the next one
             if len(self.path) == 0:
@@ -187,6 +190,7 @@ class BasePlayer(Player):
         if next_action == Action.FORWARD:
             if self.check_for_collision_ahead(grid_coord_x, grid_coord_y):
                 print("Impossible to keep going along current path; encountered an obstacle")
+                next_action = Action.BACKWARD
                 self.nav_point = None
 
         return next_action, goal_reached
@@ -326,7 +330,8 @@ class BasePlayer(Player):
         if self.get_state() is not None and self.get_state()[1] == Phase.EXPLORATION:
             image[self.occupancy_grid == OccupancyMap.VISITED] = [255, 0, 0]
         else:
-            image[self.path_overlay == 1] = [255, 0, 0]
+            image[self.occupancy_grid == OccupancyMap.VISITED] = [255, 255, 255]
+        image[self.path_overlay == 1] = [0, 25, 240]
         return image
 
 
