@@ -50,6 +50,7 @@ class FullAutoPlayer(BasePlayer):
     def find_path_to_explore(self):
         if self.get_state()[2] > 200: # TODO map percent orr time remaining
             self.control_state = ControlState.POST_EXPLORE
+            print(f"time remaining: {self.get_state()[5]}")
             self.post_exploration_processing()
         else:
             start = (self.get_map_coord_y(self.y), self.get_map_coord_x(self.x))
