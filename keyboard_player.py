@@ -547,7 +547,7 @@ class KeyboardPlayerPyGame(Player):
 
         # Draw goal marker
         if self.goal is not None:
-            cv2.drawMarker(minimap, self.goal, [255, 0, 0], cv2.MARKER_STAR, marker_size)
+            cv2.drawMarker(minimap, (self.goal[1], self.goal[0]), [0, 0, 255], cv2.MARKER_STAR, marker_size)
 
 
         # Display everything
