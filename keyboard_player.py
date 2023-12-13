@@ -63,6 +63,7 @@ class KeyboardPlayerPyGame(Player):
 
         self.occupancy_grid = np.zeros(shape=(self.MAP_WIDTH, self.MAP_WIDTH), dtype=np.uint8)
         self.path = []
+        self.goal = None
         self.nav_point = None
         self.path_overlay = None
 
@@ -383,14 +384,10 @@ class KeyboardPlayerPyGame(Player):
         print(f"Choosing {target_guess} as the target position.")
         self.show_target_images(all_matched_imgs, target_positions, target_guess)
 
-        start = (self.get_map_coord_x(0), self.get_map_coord_y(0))
-        goal = (self.get_map_coord_y(target_guess[1]), self.get_map_coord_x(target_guess[0]))
+        start = (self.get_map_coord_y(0), self.get_map_coord_x(0))
+        self.goal = (self.get_map_coord_y(target_guess[1]), self.get_map_coord_x(target_guess[0]))
 
-        # Clean up occupancy_grid: AStar will look at "unvisited" cells.
-        # Todo: might also want to do some image processing to de-noise, straighten and thicken the walls
-        self.occupancy_grid[self.occupancy_grid == OccupancyMap.VISITED] = OccupancyMap.UNVISITED
-
-        self.path = AStar(start, goal, self.occupancy_grid).perform_search()
+        self.path = AStar(start, self.goal, self.occupancy_grid).perform_search()
         if len(self.path) > 0:
             shape = self.occupancy_grid.shape
             self.path_overlay = np.zeros(shape, dtype=np.uint8)
@@ -398,7 +395,7 @@ class KeyboardPlayerPyGame(Player):
                 self.path_overlay[y, x] = 1
             self.nav_point = self.path.pop(0)
         else:
-            print(f"Could not find a path between {start} and {goal}")
+            print(f"Could not find a path between {start} and {self.goal}")
     
 
     def convert_occupancy_to_cvimg(self):
@@ -547,6 +544,11 @@ class KeyboardPlayerPyGame(Player):
         x = self.get_map_coord_x(self.x) - marker_size // 2
         y = self.get_map_coord_y(self.y) - marker_size // 2
         minimap[y:y+rotated_marker.shape[0], x:x+rotated_marker.shape[1]][rotated_marker != [0, 0, 0]] = rotated_marker[rotated_marker != [0, 0, 0]]
+
+        # Draw goal marker
+        if self.goal is not None:
+            cv2.drawMarker(minimap, self.goal, [255, 0, 0], cv2.MARKER_STAR, marker_size)
+
 
         # Display everything
         pygame.display.set_caption(f"{self.__class__.__name__}:fpv; h: {h} w:{w}; step{step}")

@@ -26,13 +26,13 @@ class AStar:
     def get_neighbors(self, coordinate):
         i, j, _direction = coordinate
         neighbors = []
-        if i > 0 and self.occupancy_grid[i - 1, j] == OccupancyMap.UNVISITED:
+        if i > 0 and self.occupancy_grid[i - 1, j] not in [OccupancyMap.OBSTACLE, OccupancyMap.UNKNOWN]:
             neighbors.append((i - 1, j, Direction.NORTH))
-        if j > 0 and self.occupancy_grid[i, j - 1] == OccupancyMap.UNVISITED:
+        if j > 0 and self.occupancy_grid[i, j - 1] not in [OccupancyMap.OBSTACLE, OccupancyMap.UNKNOWN]:
             neighbors.append((i, j - 1, Direction.WEST))
-        if i < self.height - 1 and self.occupancy_grid[i + 1, j] == OccupancyMap.UNVISITED:
+        if i < self.height - 1 and self.occupancy_grid[i + 1, j] not in [OccupancyMap.OBSTACLE, OccupancyMap.UNKNOWN]:
             neighbors.append((i + 1, j, Direction.SOUTH))
-        if j < self.width - 1 and self.occupancy_grid[i, j + 1] == OccupancyMap.UNVISITED:
+        if j < self.width - 1 and self.occupancy_grid[i, j + 1] not in [OccupancyMap.OBSTACLE, OccupancyMap.UNKNOWN]:
             neighbors.append((i, j + 1, Direction.EAST))
         return neighbors
 
