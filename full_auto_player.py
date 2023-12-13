@@ -24,6 +24,8 @@ class FullAutoPlayer(BasePlayer):
         self.keymap = None
         self.control_state = ControlState.INIT
         self.steps_since_last_scan = 0
+        self.percent_to_explore = 75
+        self.actual_map_area = (self.MAP_WIDTH // 2) ** 2
 
 
     def get_next_action(self):
@@ -48,9 +50,13 @@ class FullAutoPlayer(BasePlayer):
 
 
     def find_path_to_explore(self):
-        if self.get_state()[2] > 200: # TODO map percent orr time remaining
+        time_remaining = self.get_state()[5]
+        percent_explored = np.count_nonzero(self.occupancy_grid) / self.actual_map_area * 100.0
+        print(f"Percent explored: {percent_explored:.1f}% (will stop at {self.percent_to_explore}%); " +
+              f"Time remaining: {time_remaining:.0f}s (will stop with 5 minutes remaining)")
+        if time_remaining < 300 or percent_explored >= self.percent_to_explore:
+            print("Exploration complete")
             self.control_state = ControlState.POST_EXPLORE
-            print(f"time remaining: {self.get_state()[5]}")
             self.post_exploration_processing()
         else:
             start = (self.get_map_coord_y(self.y), self.get_map_coord_x(self.x))

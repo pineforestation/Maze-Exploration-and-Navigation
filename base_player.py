@@ -216,6 +216,17 @@ class BasePlayer(Player):
 
    
     def post_exploration_processing(self):
+        # Get stats on how much of map was actually explored
+        occupied_cells = np.nonzero(self.occupancy_grid)
+        exploration_area = len(occupied_cells[0])
+        min_row, max_row = np.min(occupied_cells[0]), np.max(occupied_cells[0])
+        min_col, max_col = np.min(occupied_cells[1]), np.max(occupied_cells[1])
+        height = (max_row - min_row + 1)
+        width = (max_col - min_col + 1)
+        actual_area = height * width
+        print(f"Actual map bounds were x={min_col-self.MAP_WIDTH//2}:{max_col-self.MAP_WIDTH//2}, y={self.MAP_WIDTH//2-max_row}:{self.MAP_WIDTH//2-min_row}, for an area of {height}*{width}={actual_area}.")
+        print(f"Explored {exploration_area} cells, which is {(exploration_area / actual_area):.1f}% of the actual area.")
+
         self.thicken_occupancy_map()
         self.process_exploration_images()
 
