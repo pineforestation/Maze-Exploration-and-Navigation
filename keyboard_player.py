@@ -513,17 +513,17 @@ class KeyboardPlayerPyGame(Player):
             phase = state[1]
 
         if phase == Phase.EXPLORATION:
-            # Use the camera view to detect walls and update the exploration grid and minimap,
-            # and also draw the rangefinder on the first person view
-            self.detect_walls(fpv)
+            if step % 15 == 1:
+                # Save camera observations to use for visual place recognition
+                cv2.imwrite(os.path.join(self.filepath, f"{step}_{round(self.x)}_{round(self.y)}_{self.heading}_.png"), fpv)
 
             # De-noise the detected walls
             if step % 100 == 0:
                 self.refine_occupancy_map()
 
-            if step % 15 == 1:
-                # Save camera observations to use for visual place recognition
-                cv2.imwrite(os.path.join(self.filepath, f"{step}_{round(self.x)}_{round(self.y)}_{self.heading}_.png"), fpv)
+            # Use the camera view to detect walls and update the exploration grid and minimap,
+            # and also draw the rangefinder on the first person view
+            self.detect_walls(fpv)
 
             # Draw the heads up display (HUD) and the mini-map
             hud_img = np.zeros(shape=(60,w,3), dtype=np.uint8)
