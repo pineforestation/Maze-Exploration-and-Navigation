@@ -4,7 +4,7 @@ import pygame
 import numpy as np
 import cv2
 import math
-from time import sleep, strftime, time
+from time import sleep, strftime
 import os
 from path_search import OccupancyMap, AStar
 from visual_place_recognition import BovwPlaceRecognition
@@ -66,7 +66,8 @@ class KeyboardPlayerPyGame(Player):
         self.nav_point = None
         self.path_overlay = None
 
-        self.nav_phase_start = None
+        self.set_target_img_timestamp = None
+        self.quit_on_next = False
 
         super(KeyboardPlayerPyGame, self).__init__()
 
@@ -108,7 +109,6 @@ class KeyboardPlayerPyGame(Player):
         self.y = 0
         self.heading = 0
         self.action_queue = []
-        self.nav_phase_start = time()
 
 
     def get_map_coord_x(self, raw_coord_x):
@@ -124,6 +124,10 @@ class KeyboardPlayerPyGame(Player):
 
 
     def act(self):
+        if self.quit_on_next:
+            self.quit_on_next = False
+            return Action.QUIT
+
         grid_coord_x = self.get_map_coord_x(self.x)
         grid_coord_y = self.get_map_coord_y(self.y)
 
@@ -175,8 +179,8 @@ class KeyboardPlayerPyGame(Player):
         if self.nav_point == (grid_coord_y, grid_coord_x):
             if len(self.path) == 0:
                 self.nav_point = None
-                end_time = time()
-                print(f"reached goal in {end_time - self.nav_phase_start} seconds")
+                end_time = self.get_state()[3]
+                print(f"reached goal in {(end_time - self.set_target_img_timestamp):.2f} seconds")
                 return Action.CHECKIN
             else:
                 self.nav_point = self.path.pop(0)
@@ -282,7 +286,8 @@ class KeyboardPlayerPyGame(Player):
             self.heading = 0
         elif action == CustomAction.PROCESS_EXPLORATION_IMAGES:
             self.post_exploration_processing()
-            next_action = Action.QUIT
+            self.quit_on_next = True
+            next_action = Action.IDLE
         else:
             raise NotImplementedError(f"Unknown custom action: {action}")
 
@@ -353,6 +358,9 @@ class KeyboardPlayerPyGame(Player):
 
         if images is None or len(images) <= 0:
             return
+
+        # Time spent in navigation phase starts counting now
+        self.set_target_img_timestamp = self.get_state()[3]
 
         all_matched_imgs = []
         target_positions = np.zeros((len(images), 2), dtype=np.int8)
