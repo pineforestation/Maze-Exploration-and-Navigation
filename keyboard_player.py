@@ -147,6 +147,7 @@ class KeyboardPlayerPyGame(Player):
         if next_action == Action.FORWARD:
             if self.check_for_collision_ahead(grid_coord_x, grid_coord_y):
                 next_action = Action.IDLE
+                print("Help, I'm stuck!")
             else:
                 converted_heading = self.get_heading_in_radians()
                 self.x += math.sin(converted_heading)
@@ -280,7 +281,7 @@ class KeyboardPlayerPyGame(Player):
         elif action == CustomAction.RESET_TRUE_NORTH:
             self.heading = 0
         elif action == CustomAction.PROCESS_EXPLORATION_IMAGES:
-            self.process_exploration_images()
+            self.post_exploration_processing()
             next_action = Action.QUIT
         else:
             raise NotImplementedError(f"Unknown custom action: {action}")
@@ -288,6 +289,11 @@ class KeyboardPlayerPyGame(Player):
         return next_action
 
    
+    def post_exploration_processing(self):
+        self.thicken_occupancy_map()
+        self.process_exploration_images()
+
+
     def process_exploration_images(self):
         self.vpr = BovwPlaceRecognition()
         print("Begin building BOVW-VPR database")
@@ -298,7 +304,6 @@ class KeyboardPlayerPyGame(Player):
     def show_target_images(self, all_matched_imgs, target_positions, target_guess):
         target_display = cv2.hconcat(all_matched_imgs)
         h, w = target_display.shape[:2]
-        print(f"w:{w}, h:{h}")
         font = cv2.FONT_HERSHEY_SIMPLEX
         line = cv2.LINE_AA
         size = 0.9
@@ -385,7 +390,7 @@ class KeyboardPlayerPyGame(Player):
                 self.path_overlay[y, x] = 1
             self.nav_point = self.path.pop(0)
         else:
-            print(f"Could not find a path between #{start} and #{goal}")
+            print(f"Could not find a path between {start} and {goal}")
     
 
     def convert_occupancy_to_cvimg(self):
@@ -398,6 +403,34 @@ class KeyboardPlayerPyGame(Player):
         image[self.occupancy_grid == OccupancyMap.OBSTACLE] = [0, 255, 0]
         image[self.path_overlay == 1] = [0, 0, 255]
         return image
+
+
+    def refine_occupancy_map(self):
+        shape = self.occupancy_grid.shape
+        height, width = shape
+        img = np.zeros((height, width, 1), dtype=np.uint8)
+        img[self.occupancy_grid == OccupancyMap.OBSTACLE] = 255
+        blur = cv2.GaussianBlur(img,(3,3),0)
+        refined_walls = cv2.threshold(blur, 120, 255, cv2.THRESH_BINARY)[1]
+        self.occupancy_grid[refined_walls == 255] = OccupancyMap.OBSTACLE
+        self.occupancy_grid[(refined_walls != 255) & (self.occupancy_grid == OccupancyMap.OBSTACLE)] = OccupancyMap.UNVISITED
+
+
+    def thicken_occupancy_map(self):
+        shape = self.occupancy_grid.shape
+        height, width = shape
+        img = np.zeros((height, width, 1), dtype=np.uint8)
+        img[self.occupancy_grid == OccupancyMap.OBSTACLE] = 255
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2,2))
+        img = cv2.morphologyEx(img, cv2.MORPH_ERODE, kernel)
+        img = cv2.morphologyEx(img, cv2.MORPH_DILATE, kernel)
+        img = cv2.morphologyEx(img, cv2.MORPH_DILATE, kernel)
+        img = cv2.morphologyEx(img, cv2.MORPH_DILATE, kernel)
+        shifted = np.zeros_like(img)
+        shifted[:-1, :-1] = img[1:, 1:]
+        print()
+        self.occupancy_grid[shifted == 255] = OccupancyMap.OBSTACLE
 
 
     def decode_filename(self, filename):
@@ -471,17 +504,20 @@ class KeyboardPlayerPyGame(Player):
             step = state[2]
             phase = state[1]
 
-        # Save camera observations (exploration phase only)
-        # These can be used for SfM, SLAM, and visual place recognition
-        if phase == Phase.EXPLORATION and step % 5 == 1:
-            cv2.imwrite(os.path.join(self.filepath, f"{step}_{round(self.x)}_{round(self.y)}_{self.heading}_.png"), fpv)
-
-        # Use the camera view to detect walls and update the exploration grid and minimap,
-        # and also draw the rangefinder on the first person view
-        self.detect_walls(fpv)
-
-        # Draw the heads up display (HUD) and the mini-map
         if phase == Phase.EXPLORATION:
+            # Use the camera view to detect walls and update the exploration grid and minimap,
+            # and also draw the rangefinder on the first person view
+            self.detect_walls(fpv)
+
+            # De-noise the detected walls
+            if step % 100 == 0:
+                self.refine_occupancy_map()
+
+            if step % 15 == 1:
+                # Save camera observations to use for visual place recognition
+                cv2.imwrite(os.path.join(self.filepath, f"{step}_{round(self.x)}_{round(self.y)}_{self.heading}_.png"), fpv)
+
+            # Draw the heads up display (HUD) and the mini-map
             hud_img = np.zeros(shape=(60,w,3), dtype=np.uint8)
             w_offset = 10
             h_offset = 20
@@ -492,7 +528,7 @@ class KeyboardPlayerPyGame(Player):
             color = (255, 255, 255)
             cv2.putText(hud_img, f"x={self.x:.2f}, y={self.y:.2f}", (w_offset, h_offset), font, size, color, stroke, line)
             cv2.putText(hud_img, f"heading={self.heading}", (w_offset, h_offset * 2), font, size, color, stroke, line)
-        
+
         # Draw the position marker
         minimap = self.convert_occupancy_to_cvimg()
         marker_size = 10
