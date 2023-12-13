@@ -275,6 +275,7 @@ class BasePlayer(Player):
         cv2.line(target_display, (0, h // 2), (w, h // 2), line_color, 2)
         cv2.line(target_display, (0, 3*h // 4), (w, 3*h // 4), line_color, 2)
         cv2.imshow('Top: actual targets; Bottom: matched images', target_display)
+        cv2.waitKey(1)
 
 
     def set_target_images(self, images):
