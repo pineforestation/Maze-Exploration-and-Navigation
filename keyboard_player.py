@@ -308,49 +308,52 @@ class KeyboardPlayerPyGame(Player):
         
 
     def show_target_images(self, all_matched_imgs, target_positions, target_guess):
-        target_display = cv2.hconcat(all_matched_imgs)
+        target_display = cv2.vconcat(all_matched_imgs)
         h, w = target_display.shape[:2]
+        h_offset = 30
+        w_offset = w//8
+        w_offset2 = w_offset + w//2
         font = cv2.FONT_HERSHEY_SIMPLEX
         line = cv2.LINE_AA
         size = 0.9
         stroke = 1
         text_color = (255, 20, 20)
         line_color = (127, 127, 127)
-        unused_coords_color = text_color
-        target_coords_color = (20, 20, 255)
+        unused_coords_color = (20, 20, 255)
+        target_coords_color = text_color
 
-        cv2.putText(target_display, 'Front View', (0 + w // 16, h // 2 - 5), font, size, text_color, stroke, line)
+        cv2.putText(target_display, 'Front View', (w_offset, h_offset), font, size, text_color, stroke, line)
         if (target_positions[0] == target_guess).all():
             coords_color = target_coords_color
         else:
             coords_color = unused_coords_color
-        cv2.putText(target_display, f'x: {target_positions[0,0]}, y: {target_positions[0,1]}', (0 + w // 16, h - 20), font, size, coords_color, stroke, line)
+        cv2.putText(target_display, f'x: {target_positions[0,0]}, y: {target_positions[0,1]}', (w_offset2, h_offset), font, size, coords_color, stroke, line)
 
-        cv2.putText(target_display, 'Right View', (w // 4 + w // 16, h // 2 - 5), font, size, text_color, stroke, line)
+        cv2.putText(target_display, 'Right View', (w_offset, h_offset + h // 4), font, size, text_color, stroke, line)
         if (target_positions[1] == target_guess).all():
             coords_color = target_coords_color
         else:
             coords_color = unused_coords_color
-        cv2.putText(target_display, f'x: {target_positions[1,0]}, y: {target_positions[1,1]}', (w // 4 + w // 16, h - 20), font, size, coords_color, stroke, line)
+        cv2.putText(target_display, f'x: {target_positions[1,0]}, y: {target_positions[1,1]}', (w_offset2, h_offset + h // 4), font, size, coords_color, stroke, line)
 
-        cv2.putText(target_display, 'Back View', (w // 2 + w // 16, h // 2 - 5), font, size, text_color, stroke, line)
+        cv2.putText(target_display, 'Back View', (w_offset, h_offset + h // 2), font, size, text_color, stroke, line)
         if (target_positions[2] == target_guess).all():
             coords_color = target_coords_color
         else:
             coords_color = unused_coords_color
-        cv2.putText(target_display, f'x: {target_positions[2,0]}, y: {target_positions[2,1]}', (w // 2 + w // 16, h - 20), font, size, coords_color, stroke, line)
+        cv2.putText(target_display, f'x: {target_positions[2,0]}, y: {target_positions[2,1]}', (w_offset2, h_offset + h // 2), font, size, coords_color, stroke, line)
 
-        cv2.putText(target_display, 'Left View', (3 * w // 4 + w // 16, h // 2 - 5), font, size, text_color, stroke, line)
+        cv2.putText(target_display, 'Left View', (w_offset, h_offset + 3*h // 4), font, size, text_color, stroke, line)
         if (target_positions[3] == target_guess).all():
             coords_color = target_coords_color
         else:
             coords_color = unused_coords_color
-        cv2.putText(target_display, f'x: {target_positions[3,0]}, y: {target_positions[3,1]}', (3*w // 4 + w // 16, h - 20), font, size, coords_color, stroke, line)
+        cv2.putText(target_display, f'x: {target_positions[3,0]}, y: {target_positions[3,1]}', (w_offset2, h_offset + 3*h // 4), font, size, coords_color, stroke, line)
 
-        cv2.line(target_display, (w // 4, 0), (w // 4, h), line_color, 2)
-        cv2.line(target_display, (w // 2, 0), (w // 2, h), line_color, 2)
-        cv2.line(target_display, (3 * w // 4, 0), (3 * w // 4, h), line_color, 2)
+        cv2.line(target_display, (w // 2, 0), (w // 2, h), line_color, 1)
+        cv2.line(target_display, (0, h // 4), (w, h // 4), line_color, 2)
         cv2.line(target_display, (0, h // 2), (w, h // 2), line_color, 2)
+        cv2.line(target_display, (0, 3*h // 4), (w, 3*h // 4), line_color, 2)
         cv2.imshow('Top: actual targets; Bottom: matched images', target_display)
 
 
@@ -366,11 +369,10 @@ class KeyboardPlayerPyGame(Player):
         all_matched_imgs = []
         target_positions = np.zeros((len(images), 2), dtype=np.int8)
         for i in range(4):
-            match_filename, match_img, match_distance = self.vpr.query_by_image(images[i])
-            all_matched_imgs.append(cv2.vconcat([images[i], match_img]))
+            match_filename, match_img = self.vpr.query_by_image(images[i])
+            all_matched_imgs.append(match_img)
 
             goal_x, goal_y, _heading = self.decode_filename(match_filename)
-            print(f"Target_{i} (x,y): {goal_x}, {goal_y}; confidence is {match_distance}")
             target_positions[i] = (goal_x, goal_y)
 
         average_position = target_positions.mean(axis=0)

@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import os
 import faiss
-from time import sleep, strftime, time
+from time import time
 
 class FaissKMeans:
     def __init__(self, n_clusters=8, n_init=10, max_iter=300):
@@ -29,7 +29,6 @@ class FaissKMeans:
 class BovwPlaceRecognition:
     def __init__(self):
         self.num_clusters = 150 # TODO tune this parameter
-        self.sift = cv2.SIFT_create()
         self.images = {}
         self.training_img_histograms = {}
         self.visual_words = []
@@ -59,13 +58,33 @@ class BovwPlaceRecognition:
             self.training_img_histograms[key] = hist
 
 
-    def query_by_image(self, query_img):
-        _kp, des = self.sift.detectAndCompute(query_img, None)
-        query_hist = self._calculate_histogram(des, self.visual_words)
-        match_filename, match_distance = self._get_tentative_match(query_hist, self.training_img_histograms)
-        match_img = self.images[match_filename]
-        # TODO geometric verification
-        return match_filename, match_img, match_distance
+    def query_by_image(self, query_img, shortlist_count=5):
+        sift = cv2.SIFT_create()
+        kp_qry, descr_qry = sift.detectAndCompute(query_img, None)
+        query_hist = self._calculate_histogram(descr_qry, self.visual_words)
+        match_filenames = self._get_tentative_matches(query_hist, self.training_img_histograms, shortlist_count)
+        match_imgs = [self.images[filename] for filename in match_filenames]
+
+        # For each shortlisted image, match descriptors with the query image
+        # Then, we will return the image with the most good matches
+        bf = cv2.BFMatcher()
+        best_match_count = 0
+        best_filename = None
+        best_match_img = None
+        for filename, img in zip(match_filenames, match_imgs):
+            kp_sl, descr_sl = sift.detectAndCompute(img, None)
+
+            good_matches = []
+            for m,n in bf.knnMatch(descr_qry, descr_sl, k=2):
+                # Lowe's ratio test
+                if m.distance < 0.75*n.distance:
+                    good_matches.append([m])
+
+            if len(good_matches) > best_match_count:
+                best_match_count = len(good_matches)
+                best_filename = filename
+                best_match_img = cv2.drawMatchesKnn(query_img, kp_qry, img, kp_sl, good_matches[:50], None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        return best_filename, best_match_img
 
 
     def _load_images_from_folder(self, folder):
@@ -81,8 +100,9 @@ class BovwPlaceRecognition:
         descriptor_list = []
         image_to_descriptors = {}
 
+        sift = cv2.SIFT_create()
         for key, img in images.items():
-            _kp, des = self.sift.detectAndCompute(img, None)
+            _kp, des = sift.detectAndCompute(img, None)
             if des is not None:
                 descriptor_list.extend(des)
                 image_to_descriptors[key] = des
@@ -110,14 +130,12 @@ class BovwPlaceRecognition:
         return histogram
 
 
-    def _get_tentative_match(self, target_histogram, dataset_histograms):
-        best_match = None
-        min_distance = float('inf')
+    def _get_tentative_matches(self, target_histogram, dataset_histograms, n_matches):
+        match_to_distance = {}
 
         for key, histogram in dataset_histograms.items():
             distance = np.linalg.norm(target_histogram - histogram)
-            if distance < min_distance:
-                min_distance = distance
-                best_match = key
+            match_to_distance[key] = distance
 
-        return best_match, min_distance
+        sorted_matches = sorted(match_to_distance.items(), key=lambda x: x[1])
+        return [filename for filename, _distance in sorted_matches[:n_matches]]
