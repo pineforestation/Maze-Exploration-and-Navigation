@@ -299,7 +299,7 @@ class BasePlayer(Player):
         self.set_target_img_timestamp = self.get_state()[3]
 
         all_matched_imgs = []
-        target_positions = np.zeros((len(images), 2), dtype=np.int8)
+        target_positions = np.zeros((len(images), 2), dtype=np.int16)
         for i in range(4):
             match_filename, match_img = self.vpr.query_by_image(images[i])
             all_matched_imgs.append(match_img)
@@ -322,7 +322,7 @@ class BasePlayer(Player):
         self.goal = (self.get_map_coord_y(target_guess[1]), self.get_map_coord_x(target_guess[0]))
 
         # Ensure that the goal didn't get marked as a wall by the map thickening step
-        self.occupancy_grid[self.goal] = OccupancyMap.VISITED
+        self.occupancy_grid[self.goal[0]-2:self.goal[0]+2, self.goal[1]-2:self.goal[1]+2] = OccupancyMap.VISITED
 
         self.path = AStar(start, self.goal, self.occupancy_grid).perform_search()
         if len(self.path) > 0:
@@ -473,17 +473,17 @@ class BasePlayer(Player):
             # and also draw the rangefinder on the first person view
             self.detect_walls(fpv)
 
-            # Draw the heads up display (HUD) and the mini-map
-            hud_img = np.zeros(shape=(60,w,3), dtype=np.uint8)
-            w_offset = 10
-            h_offset = 20
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            line = cv2.LINE_AA
-            size = 0.75
-            stroke = 1
-            color = (255, 255, 255)
-            cv2.putText(hud_img, f"x={self.x:.2f}, y={self.y:.2f}", (w_offset, h_offset), font, size, color, stroke, line)
-            cv2.putText(hud_img, f"heading={self.heading}", (w_offset, h_offset * 2), font, size, color, stroke, line)
+        # Draw the heads up display (HUD) and the mini-map
+        hud_img = np.zeros(shape=(60,w,3), dtype=np.uint8)
+        w_offset = 10
+        h_offset = 20
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        line = cv2.LINE_AA
+        size = 0.75
+        stroke = 1
+        color = (255, 255, 255)
+        cv2.putText(hud_img, f"x={self.x:.2f}, y={self.y:.2f}", (w_offset, h_offset), font, size, color, stroke, line)
+        cv2.putText(hud_img, f"heading={self.heading}", (w_offset, h_offset * 2), font, size, color, stroke, line)
 
         # Draw the position marker
         minimap = self.convert_occupancy_to_cvimg()
@@ -507,7 +507,6 @@ class BasePlayer(Player):
         minimap_pygame = convert_opencv_img_to_pygame(cv2.resize(minimap, (2*w, 2*h)))
         self.screen.blit(fpv_pygame, (0, 0))
         self.screen.blit(minimap_pygame, (2*w, 60))
-        if phase == Phase.EXPLORATION:
-            hud_pygame = convert_opencv_img_to_pygame(hud_img, True)
-            self.screen.blit(hud_pygame, (2*w, 0))
+        hud_pygame = convert_opencv_img_to_pygame(hud_img, True)
+        self.screen.blit(hud_pygame, (2*w, 0))
         pygame.display.update()
