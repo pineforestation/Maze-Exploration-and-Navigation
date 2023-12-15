@@ -134,7 +134,7 @@ class BasePlayer(Player):
         elif next_action == Action.RIGHT:
             self.heading = (self.heading + 1) % 147
 
-        self.occupancy_grid[grid_coord_y, grid_coord_x] = OccupancyMap.VISITED
+        self.occupancy_grid[grid_coord_y-1:grid_coord_y+1, grid_coord_x-1:grid_coord_x+1] = OccupancyMap.VISITED
 
         return next_action
 
@@ -227,7 +227,7 @@ class BasePlayer(Player):
         print(f"Actual map bounds were x={min_col-self.MAP_WIDTH//2}:{max_col-self.MAP_WIDTH//2}, y={self.MAP_WIDTH//2-max_row}:{self.MAP_WIDTH//2-min_row}, for an area of {height}*{width}={actual_area}.")
         print(f"Explored {exploration_area} cells, which is {(exploration_area / actual_area):.1f}% of the actual area.")
 
-        self.occupancy_grid = self.thicken_occupancy_map()
+        # self.occupancy_grid = self.thicken_occupancy_map()
         self.process_exploration_images()
 
 
@@ -342,10 +342,10 @@ class BasePlayer(Player):
         image[self.occupancy_grid == OccupancyMap.UNKNOWN] = [30, 30, 30]
         image[self.occupancy_grid == OccupancyMap.UNVISITED] = [255, 255, 255]
         image[self.occupancy_grid == OccupancyMap.OBSTACLE] = [0, 255, 0]
-        if self.get_state() is not None and self.get_state()[1] == Phase.EXPLORATION:
-            image[self.occupancy_grid == OccupancyMap.VISITED] = [255, 0, 0]
-        else:
-            image[self.occupancy_grid == OccupancyMap.VISITED] = [255, 255, 255]
+        # if self.get_state() is not None and self.get_state()[1] == Phase.EXPLORATION:
+        image[self.occupancy_grid == OccupancyMap.VISITED] = [255, 0, 0]
+        # else:
+            # image[self.occupancy_grid == OccupancyMap.VISITED] = [255, 255, 255]
         image[self.path_overlay == 1] = [0, 25, 240]
         return image
 

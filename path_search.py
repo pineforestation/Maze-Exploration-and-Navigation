@@ -23,21 +23,21 @@ class AStar:
         self.height = height
         self.width = width
 
-        if allow_unknown:
-            self.prohibited_types = [OccupancyMap.OBSTACLE]
-        else:
-            self.prohibited_types = [OccupancyMap.OBSTACLE, OccupancyMap.UNKNOWN]
+        # if allow_unknown:
+        #     self.prohibited_types = [OccupancyMap.OBSTACLE]
+        # else:
+        #     self.prohibited_types = [OccupancyMap.OBSTACLE, OccupancyMap.UNKNOWN]
 
     def get_neighbors(self, coordinate):
         i, j, _direction = coordinate
         neighbors = []
-        if i > 0 and self.occupancy_grid[i - 1, j] not in self.prohibited_types:
+        if i > 0 and self.occupancy_grid[i - 1, j] == OccupancyMap.VISITED:
             neighbors.append((i - 1, j, Direction.NORTH))
-        if j > 0 and self.occupancy_grid[i, j - 1] not in self.prohibited_types:
+        if j > 0 and self.occupancy_grid[i, j - 1] == OccupancyMap.VISITED:
             neighbors.append((i, j - 1, Direction.WEST))
-        if i < self.height - 1 and self.occupancy_grid[i + 1, j] not in self.prohibited_types:
+        if i < self.height - 1 and self.occupancy_grid[i + 1, j] == OccupancyMap.VISITED:
             neighbors.append((i + 1, j, Direction.SOUTH))
-        if j < self.width - 1 and self.occupancy_grid[i, j + 1] not in self.prohibited_types:
+        if j < self.width - 1 and self.occupancy_grid[i, j + 1] == OccupancyMap.VISITED:
             neighbors.append((i, j + 1, Direction.EAST))
         return neighbors
 
